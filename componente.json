@@ -1,0 +1,19 @@
+{
+  "suite": "local-suite",
+  "nome": "DICOM_BRIDGE",
+  "rotulo": "DicomBridge",
+  "modulo_da_porta": "bridge",
+  "repositorio": "radioterapia-ai/dicom-bridge",
+  "app": [
+    "radai_bridge.py",
+    "radai_bridge_entrada.py",
+    "radai_image.py",
+    "radai_image_screen.py"
+  ],
+  "baterias": [
+    "test_bridge.py",
+    "test_bridge_motor.py",
+    "test_bridge_tela.py",
+    "test_image.py"
+  ]
+}
