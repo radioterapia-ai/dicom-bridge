@@ -3,7 +3,7 @@
   "nome": "DICOM_BRIDGE",
   "rotulo": "DicomBridge",
   "modulo_da_porta": "bridge",
-  "repositorio": "radioterapia-ai/dicom-bridge",
+  "repositorio": "drhenriquebraga/dicom-bridge",
   "app": [
     "radai_bridge.py",
     "radai_bridge_entrada.py",

@@ -19,7 +19,7 @@ synthetic phantoms the batteries build.
 The code in this repository: reading exams from files, folders and CDs, the
 diagnosis, the conversion and the delivery. The installer, the updater and
 the shell shared by the six apps live in the
-[Local Suite](https://github.com/radioterapia-ai/local-suite) repository; a
+[Local Suite](https://github.com/drhenriquebraga/local-suite) repository; a
 finding there can be reported here or there. The exported series carries the
 patient's identification on purpose, so the findings that matter most are the
 ones that move it where it should not go:
