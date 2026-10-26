@@ -202,6 +202,84 @@ def _semear_phi(pasta, nome, ident, nascimento):
 
 
 
+def teste_a_carga_por_pasta_chega_aos_poucos():
+    secao(u"a carga por pasta chega aos poucos e é a mesma do POST único")
+    try:
+        from fastapi import FastAPI
+    except Exception as e:
+        checar(u"fastapi disponivel", False, str(e)[:60])
+        return
+    import radai_bridge
+    import radai_dicom
+    import radai_varrer
+    base = novo_temp()
+    for k in range(3):
+        escrever_serie(os.path.join(base, "s%d" % k), n=6, numero=k + 1,
+                       descricao=u"CT %d" % k)
+    radai_dicom.esquecer_varredura()
+    app = radai_bridge.montar(FastAPI())
+    cli = Cliente(app)
+    checar(u"o DicomBridge registra a varredura dele na casca",
+           radai_varrer.uso("bridge") is not None
+           and not radai_varrer.uso("bridge").filtra)
+    publicadas = []
+    original = radai_varrer.publicar
+
+    def contando(job, linhas, extra=None, final=False):
+        publicadas.append((len(linhas or ()), bool(final)))
+        return original(job, linhas, extra, final)
+    radai_varrer.publicar = contando
+    try:
+        d = radai_varrer.iniciar("bridge", base, em_segundo_plano=False)
+    finally:
+        radai_varrer.publicar = original
+    parciais = [n for n, f in publicadas if not f]
+    checar(u"uma publicação por pasta lida, antes do fim (%s)" % parciais,
+           parciais == [1, 2, 3] and d.get("final"), json.dumps(d)[:160])
+    lidas = []
+    original_ler = radai_dicom._ler_nomes
+    radai_dicom._ler_nomes = lambda *a, **k: (lidas.append(1), original_ler(*a, **k))[1]
+    try:
+        radai_dicom.varrer(base)
+    finally:
+        radai_dicom._ler_nomes = original_ler
+    checar(u"a varredura completa fica no cache: o diagnóstico não relê o estudo",
+           not lidas, u"%d pasta(s) relida(s)" % len(lidas))
+    velha = cli.post("/api/bridge/varrer", json={"pasta": base}).json()
+
+    def chaves(ls):
+        return sorted((x["uid"], x["cortes"], x["descricao"], x["bilhete"],
+                       x["central"]) for x in ls)
+    checar(u"as linhas são as mesmas do POST único (mesmo bilhete, mesmo corte central)",
+           chaves(d.get("linhas") or []) == chaves(velha.get("series") or []))
+    extra = d.get("extra") or {}
+    checar(u"  e o fim traz as imagens, os ignorados e a origem como o POST",
+           extra.get("imagens") == velha.get("imagens")
+           and extra.get("ignorados") == velha.get("ignorados")
+           and extra.get("origem") == velha.get("origem"))
+    u = radai_varrer.uso("bridge")
+    job = radai_varrer._novo("bridge", base, 0, {})
+    u.iniciar(job)
+    radai_dicom.esquecer_varredura()
+    pasta0 = os.path.join(base, "s0")
+    u.ler(job, pasta0, sorted(os.listdir(pasta0)))
+    job["parado"] = True
+    u.fechar(job)
+    checar(u"  a busca cancelada não vai ao cache (o diagnóstico leria meia série)",
+           os.path.abspath(base) not in radai_dicom._VARREDURAS)
+    f = radai_bridge.JS
+    corpo = f[f.index(u"function dcCarregarAosPoucos"):f.index(u"function dcCdMostrar")]
+    checar(u"a tela usa a varredura da casca quando não é o CD",
+           u"uiVarrer({uso: 'bridge'" in corpo
+           and u"dcCarregarAosPoucos(pasta)" in f[f.index(u"function dcCarregar("):
+                                                  f.index(u"function dcLendoHTML")])
+    acr = f[f.index(u"function dcAcrescentar"):f.index(u"function dcLigarCartao")]
+    checar(u"  e o cartão novo entra no fim, sem mudar o índice dos que já estão "
+           u"(a marcação guarda o índice)",
+           u"insertAdjacentHTML('beforeend'" in acr and u".sort(" not in acr
+           and u"DC.series.push(s)" in acr)
+
+
 def teste_a_grade_nao_rola():
     secao(u"a grade nao rola; o visor da serie aberta rola")
     f = fonte("radai_bridge.py")
@@ -772,7 +850,7 @@ def teste_a_imagem_no_pipeline_so_converte_ajustada():
     checar(u"escala nao confirmada: nao pede a conversao, abre a serie e treme o botao",
            res["sem_confirmar"] == 0 and res["tremeu"] == [u"im_conf_escala"]
            and res["aberta"] == u"b_img"
-           and u"confirme a escala" in res["aviso"], str(res)[:240])
+           and u"a escala e a ordem" in res["aviso"], str(res)[:240])
     checar(u"espessura vazia: nao pede a conversao e o campo treme",
            res["sem_esp"] == 0 and res["tremeu_esp"] == [u"im_esp"],
            str(res.get("tremeu_esp")))
@@ -794,6 +872,70 @@ def teste_a_imagem_no_pipeline_so_converte_ajustada():
         B.JS = original
     checar(u"  (isca) sem a cobranca, a imagem sem escala confirmada seria convertida",
            isca is not None and isca["sem_confirmar"] == 1, str(isca)[:160])
+
+
+_INVERTER_JS = u"""
+var TREMEU = [];
+window.uiTremer = function(el){ TREMEU.push(el.id) };
+DC.series = [{imagem: true, bilhete: 'b_img', descricao: 'RM T2 AXIAL',
+              modalidade: 'JPEG/PNG', cortes: 6, n: 6, matriz: '64x64',
+              sugestoes: {modalidade: 'MR', orientacao: 'axial', espessura_mm: 5,
+                          espacamento_mm: 0.8, fov_mm: 240}}];
+DC.fonte = 'pasta';
+BG.destinos = ['destino'];
+DC.marcadas = {0: true};
+function pedidos(){ return CORPOS.filter(function(c){ return c.url === '/api/bridge/etapa/converter' }) }
+var saida = {};
+dcAbrir(0);
+var e = imEstado(DC.series[0]);
+e.escala = true;
+e.decidiveis = ['ordem alfabetica'];
+saida.aceitos_confirmada = imAceitosDe(e);
+imInverter();
+saida.confirmada_depois = e.escala;
+saida.aceitos_depois = imAceitosDe(e);
+dcConverter();
+saida.pedidos_invertida = pedidos().length;
+saida.tremeu = TREMEU.slice();
+saida.aviso = (ELS['im_aviso'] || {}).textContent || '';
+e.escala = true;
+dcConverter();
+var p = pedidos();
+saida.ordem_no_pedido = p.length ? p[0].corpo.series[0].imagem.geometria.ordem_invertida : null;
+saida.aceitos_no_pedido = p.length ? p[0].corpo.series[0].imagem.aceitar : null;
+console.log('JSON:' + JSON.stringify(saida));
+"""
+
+
+def teste_a_ordem_trocada_pede_nova_confirmacao():
+    secao(u"a ordem dos cortes se confirma com a escala: inverter pede confirmar de novo")
+    import radai_bridge as B
+    res, erro = _rodar_tela(_INVERTER_JS)
+    checar(u"a tela executa com o DOM dublado", res is not None, erro)
+    if res is None:
+        return
+    checar(u"confirmada, a decisão da ordem alfabética vai junto com a escala",
+           res["aceitos_confirmada"] == [u"ordem alfabetica"], str(res)[:200])
+    checar(u"inverter a ordem desfaz a confirmação e a decisão",
+           res["confirmada_depois"] is False and res["aceitos_depois"] == [],
+           str(res)[:200])
+    checar(u"  e «Converter» não pede a conversão: treme a confirmação e diz o que conferir",
+           res["pedidos_invertida"] == 0 and res["tremeu"] == [u"im_conf_escala"]
+           and u"ordem" in res["aviso"] and u"escala" in res["aviso"], str(res)[:240])
+    checar(u"confirmada de novo, converte com a ordem invertida e a decisão",
+           res["ordem_no_pedido"] is True
+           and res["aceitos_no_pedido"] == [u"ordem alfabetica"], str(res)[:240])
+    original = B.JS
+    try:
+        i = original.find(u"function imInverter(")
+        j = original.find(u"}", i)
+        B.JS = original[:i] + original[i:j].replace(u"e.escala = false;", u"") + original[j:]
+        isca, _e = _rodar_tela(_INVERTER_JS)
+    finally:
+        B.JS = original
+    checar(u"  (isca) a inversão que não desfaz a confirmação deixaria converter",
+           isca is not None and i <= B.JS.find(u"e.escala = false;", i) < j
+           and isca["pedidos_invertida"] == 1, str(isca)[:160])
 
 
 def _versao_errada(modulo, funcao, de, para):
@@ -975,9 +1117,17 @@ def teste_o_cd_le_so_o_drive_de_cd():
     m = re.search(r'<span class="ui-envio-bts">(.*?)</span><span class="ui-envio-barra">',
                   p, re.S)
     bts = m.group(1) if m else u""
-    checar(u"o botão «Carregar um CD» é a terceira opção do quadro de carregar",
+    checar(u"o botão «Carregar um CD» é a terceira opção do quadro de carregar, "
+           u"e «Importar imagem» a quarta, ao lado dele",
            bts.find(u"Escolher arquivos") < bts.find(u"Escolher pasta")
-           < bts.find(u"Carregar um CD") and bts.count(u"<button") == 3, bts[:200])
+           < bts.find(u"Carregar um CD") < bts.find(u"Importar imagem")
+           and bts.count(u"<button") == 4, bts[:200])
+    import radai_image
+    m_img = re.search(r'<input type="file" class="ui-envio-img" multiple accept="([^"]+)">', p)
+    checar(u"  o quarto botão abre o explorador só com as extensões que a grade "
+           u"de imagem aceita",
+           m_img is not None and m_img.group(1).split(u",") == list(radai_image.EXTENSOES)
+           and u'data-envio="imagem"' in bts, m_img.group(1) if m_img else u"")
     checar(u"  com o ícone de disco em SVG, e o clique não abre o seletor de arquivos",
            radai_ui.icone(u"disco") and radai_ui.icone(u"disco") in bts
            and u"event.stopPropagation();dcCd()" in bts)
@@ -1253,13 +1403,21 @@ def teste_o_diagnostico_le_todas_as_series():
            u"%s %s" % (res["pendente_bloqueia"], res["depois_libera"]))
     checar(u"  e, enquanto isso, diz que esta lendo",
            u"lendo o cabeçalho…" in res["outras_pendente"], res["outras_pendente"][:200])
+    lista = re.sub(r"<[^>]+>", u"", res["lista"])
     checar(u"a lista conta os alertas de todas, sem «…»",
-           res["lista"].count(u"1 alerta") == 2 and u"0 alertas" in res["lista"]
-           and u"…" not in res["lista"], res["lista"][:300])
+           lista.count(u"1 alerta") == 2 and u"0 alertas" in lista
+           and u"…" not in lista, res["lista"][:300])
+    checar(u"  e a palavra vai num nó dela, fora do número, para casar a chave",
+           res["lista"].count(u"<span data-radai-frase>alerta</span>") == 2
+           and u"<span data-radai-frase>alertas</span>" in res["lista"],
+           res["lista"][:300])
     checar(u"os alertas das outras series aparecem ao lado da aberta",
            u"Alertas das outras séries escolhidas" in res["outras"]
            and u"Decodificador da B" in res["outras"] and u"não converte" in res["outras"]
            and u"Nenhum alerta." in res["outras"] and u"Alerta da A" not in res["outras"],
+           res["outras"][:300])
+    checar(u"  cada título num nó dele: dois alertas juntos não viram uma frase só",
+           u"<span data-radai-frase>Decodificador da B</span>" in res["outras"],
            res["outras"][:300])
     checar(u"trocar o modo depois de converter NAO descarta a conversao",
            res["modo_descartou"] == 0 and res["modo_conversao"] == u"tok"
@@ -2141,10 +2299,12 @@ def main():
         return 0
 
     testes = [teste_a_grade_nao_rola,
+              teste_a_carga_por_pasta_chega_aos_poucos,
               teste_um_pedido_por_serie,
               teste_204_e_404_nao_viram_laco,
               teste_a_entrega_vai_pelo_bilhete,
               teste_a_imagem_no_pipeline_so_converte_ajustada,
+              teste_a_ordem_trocada_pede_nova_confirmacao,
               teste_o_cd_le_so_o_drive_de_cd,
               teste_nenhuma_tela_pergunta_sobre_o_texto_no_pixel,
               teste_o_contrato_da_fila,

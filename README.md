@@ -24,10 +24,17 @@ study from being accepted and converts it so that it is.
 It has one tool, inside the suite — **Convert images for the TPS**, one
 vertical page that opens step by step:
 
-1. **Load** — a folder, files, a `.zip`, drag and drop, or **Load a CD**,
+1. **Load** — a folder, files, a `.zip`, drag and drop, **Load a CD**,
    which finds the CD drive with a disc and reads the whole disc, folders and
    subfolders, without writing anything to it (the CD is never offered as a
-   destination, and the reading can be cancelled). What is sent is
+   destination, and the reading can be cancelled), or **Import image**, which
+   opens the Windows file dialog filtered to the pictures it reads (JPEG,
+   PNG, TIFF and BMP). A folder is read in the background by the Suite's
+   reader, with *Stop reading*: the series appear as they are found, each
+   with the thumbnail of its middle slice, and what was read goes straight
+   to the diagnosis, which does not read the study again. Unlike the other
+   modules, it reads with no date filter: a CD or an outside exam brings old
+   folder dates. What is sent is
    copied to a working folder on this workstation, outside any synced folder,
    with short names (long DICOM UIDs would pass the Windows path limit), and
    deleted when the loads are cleared, when the app closes, or after 12 hours.
@@ -43,7 +50,8 @@ vertical page that opens step by step:
    it stays an alert.
 4. **Convert** — every series comes out uncompressed, in Implicit VR Little
    Endian (the default DICOM transfer syntax, the same one the RTSTRUCT uses,
-   whichever ring drawing was chosen at first use), with the UIDs it brought
+   whichever ring drawing is set in *Settings → General*), with the UIDs it
+   brought
    — except a colour series, written in greyscale (`MONOCHROME2`), and a
    series whose slice position or orientation the conversion had to assume:
    those get new UIDs, so they never mix with the original. A series without
@@ -68,10 +76,34 @@ folder, each picture series with its own generated ID:
 
 - A JPEG keeps no millimetres per pixel, no slice thickness and no
   orientation. The scale and the thickness come suggested; the thickness is
-  mandatory, and the scale is confirmed in one click, looking at an MPR that
-  shows whether the volume was distorted. A wrong scale accepted without
-  looking puts an image of the wrong size into the fusion, and a rigid
-  registration does not correct size.
+  mandatory, and the spacing between slices sits next to it (empty, it is
+  the thickness). The suggested scale assumes the typical field of the
+  modality, so a picture exported with zoom comes out flattened: **Measure a
+  known distance** takes two clicks on the axial over a line of known
+  length, such as the ruler burned into the image, and its length in
+  millimetres, and the scale comes out of that.
+- The default assumes the first file is at the feet (for a coronal series,
+  at the front; for a sagittal one, at the patient's left). **Reverse the
+  slice order** fixes a series exported the other way, in the MPR and in
+  the exported DICOM; a picture has no slice position, so the direction is
+  not detected.
+- The MPR is drawn in the standard presentation for an axial, a coronal or
+  a sagittal series, from the same orientation that goes into the exported
+  DICOM, and its edges say where the patient is: cranial at the top and
+  caudal at the bottom of the coronal and the sagittal, the patient's right
+  on the left of the coronal, anterior on the left of the sagittal. The
+  labels belong to the presentation, not to the files: reversing the order
+  flips the image and the labels stay, so the head should end up next to
+  "cranial".
+- One click confirms that the scale and the slice order were checked on an
+  MPR that shows whether the volume was distorted: round things come out
+  round, and the head is up in the coronal and the sagittal. Changing the
+  scale or reversing the order asks for it again, and the conversion waits
+  for it. A wrong scale puts an image of the wrong size into the fusion, a
+  reversed order puts in a mirror image, and a rigid registration corrects
+  neither.
+- Pictures of different sizes do not convert as one series: a DICOM series
+  has a single matrix.
 - The orientation is read from the series description ("MR t2 axial" is
   axial), for the person to check.
 - A picture does not say whose it is: the series comes out as patient
@@ -136,7 +168,8 @@ requirements and installation are in the Suite README.
 
 This repository has no build of its own. The Suite's packager
 (`build/empacotar_instalador.py --dos-repositorios`) downloads each component
-at the tag pinned in `build/componentes.lock.json`, checks its SHA‑256 and
+at the tag pinned in `build/componentes.lock.json`, checks the SHA‑256 of its
+extracted tree against the lock and
 assembles the installer — see *Build from source* in the Suite README.
 
 ## Running the batteries
@@ -170,6 +203,23 @@ none may be committed to it.**
    carries DICOM (with or without extension), a medical volume or a run
    log — and refuses it too when the scan cannot run, without the Suite
    beside this folder or without Python.
+
+## Reporting a problem
+
+A problem that is not a vulnerability goes through
+**[radioterapia.ai](https://radioterapia.ai)**. Include the Local Suite
+version, the Windows version, the screen language and the step that
+failed — and **never patient data**: no DICOM series, no screenshot of a
+patient image, no log with a patient ID, a UID or a series path. A problem
+reproduced with the synthetic phantoms of the batteries is the quickest to
+fix.
+
+## Security
+
+Found something that exposes patient data or lets the program act where it
+should not? **Do not report it in public.** Use GitHub's private
+vulnerability reporting on this repository, described in
+[SECURITY.md](SECURITY.md).
 
 ## Licence and name
 

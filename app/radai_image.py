@@ -41,12 +41,68 @@ TITULO_DO_CARIMBO_NAO_CONFERIDO = (u"Não consegui conferir se há texto do "
 MINIMO_PARA_O_CARIMBO = 2
 DIGITOS_DO_SUFIXO = 4
 TITULO_SEM_DONO = u"A imagem não diz de quem é"
+# GUARDA: frase inteira, sem %s, para casar a chave do dicionário; os valores
+# repetem DESCONHECIDO, PREFIXO_DO_ID e NOME_DO_LEIA_ME.
+DETALHE_SEM_DONO = (u"a série sai como paciente DESCONHECIDO, com um ID gerado "
+                    u"(EXTERNO com a data, a hora e um sufixo aleatório curto), "
+                    u"e a pasta de entrega leva um LEIA-ME.txt. No TPS ela pode "
+                    u"virar paciente novo ou ser associada à pessoa errada: quem "
+                    u"importa atribui.")
 TITULO_DA_ORDEM = u"Não sei em que ordem os cortes vão"
+DETALHE_DA_ORDEM = (u"os nomes não trazem número de instância, então a ordem seria "
+                    u"a alfabética, que só por acaso é a ordem anatômica. Corte "
+                    u"trocado não aparece no axial: aparece no MPR como um degrau, "
+                    u"e no contorno, depois.")
+FAZ_DA_ORDEM = (u"renomeie com numeração (img_0001, img_0002…) ou confira no MPR "
+                u"e confirme a escala e a ordem dos cortes.")
+DECISOES = (TITULO_DA_ORDEM,)
+TITULO_DO_TAMANHO = u"As imagens não têm todas o mesmo tamanho"
+DETALHE_DO_TAMANHO = (u"tamanhos encontrados: %s. Uma série DICOM tem uma matriz "
+                      u"só.")
+FAZ_DO_TAMANHO = (u"separe as imagens por tamanho em pastas diferentes e converta "
+                  u"uma de cada vez.")
+# GUARDA: uma frase inteira por campo, sem %s nem o nome interno: a tela casa a
+# chave do dicionário pela frase inteira.
+FALTAS_DA_GEOMETRIA = (
+    ("espacamento_mm", u"A imagem não tem escala",
+     u"Um JPEG não guarda milímetro por pixel, e sem a escala a série entra na "
+     u"fusão com o tamanho errado: o registro rígido não corrige tamanho.",
+     u"meça uma distância conhecida no axial ou informe a escala; ela costuma "
+     u"estar no laudo ou no rodapé da própria imagem."),
+    ("espessura_mm", u"A imagem não tem espessura de corte",
+     u"Um JPEG não guarda a espessura do corte, e sem ela o TPS não sabe a que "
+     u"distância um corte fica do outro.",
+     u"informe a espessura do corte; ela costuma estar no laudo ou gravada na "
+     u"própria imagem."),
+    ("orientacao", u"A imagem não tem orientação",
+     u"Um JPEG não guarda a orientação do corte, e sem ela o TPS não consegue "
+     u"pôr a série no espaço para fundir.",
+     u"escolha a orientação (axial, coronal ou sagital); a descrição da série "
+     u"costuma dizer."),
+    ("posicao_paciente", u"A imagem não tem a posição do paciente",
+     u"Um JPEG não guarda a posição do paciente na mesa, e sem ela o TPS não "
+     u"sabe para que lado ficam a cabeça e a frente.",
+     u"escolha a posição do paciente (HFS, HFP, FFS ou FFP); ela costuma estar "
+     u"no laudo."),
+)
 
 PLANOS_DO_MPR = {
     "axial": {"linha": u"coronal", "coluna": u"sagital"},
     "coronal": {"linha": u"axial", "coluna": u"sagital"},
     "sagital": {"linha": u"axial", "coluna": u"coronal"},
+}
+EIXOS_NA_TELA = {
+    "coronal": {"baixo": (0, 0, -1), "direita": (1, 0, 0)},
+    "sagital": {"baixo": (0, 0, -1), "direita": (0, 1, 0)},
+    "axial": {"baixo": (0, 1, 0), "direita": (1, 0, 0)},
+}
+BORDAS_DO_MPR = {
+    "coronal": {"cima": u"cranial", "baixo": u"caudal",
+                "esquerda": u"direita do paciente",
+                "direita": u"esquerda do paciente"},
+    "sagital": {"cima": u"cranial", "baixo": u"caudal",
+                "esquerda": u"anterior", "direita": u"posterior"},
+    "axial": {},
 }
 
 _PALAVRAS_DA_ORIENTACAO = {
@@ -72,10 +128,10 @@ class Recusa(Exception):
 
 
 def _achado(ok, titulo, detalhe=u"", resolve=None, o_que_faz=u"",
-            alerta=False):
+            alerta=False, impede=False):
     return {"ok": bool(ok), "titulo": titulo, "detalhe": detalhe,
             "resolve": resolve, "o_que_faz": o_que_faz,
-            "alerta": bool(alerta)}
+            "alerta": bool(alerta), "impede": bool(impede)}
 
 
 def _palavras(texto):
@@ -401,12 +457,10 @@ def conferir(serie, geometria=None, com_carimbo=True):
 
     if not serie.get("uniforme", True):
         achados.append(_achado(
-            False, u"As imagens não têm todas o mesmo tamanho",
-            u"tamanhos encontrados: %s. Uma série DICOM tem uma matriz só."
+            False, TITULO_DO_TAMANHO,
+            DETALHE_DO_TAMANHO
             % ", ".join("%dx%d" % d for d in serie.get("dimensoes", [])),
-            resolve=False,
-            o_que_faz=u"separe as imagens por tamanho em pastas diferentes e "
-                      u"converta uma de cada vez."))
+            resolve=False, o_que_faz=FAZ_DO_TAMANHO, impede=True))
     else:
         d = (serie.get("dimensoes") or [(0, 0)])[0]
         achados.append(_achado(True, u"Matriz uniforme",
@@ -414,31 +468,18 @@ def conferir(serie, geometria=None, com_carimbo=True):
 
     como = serie.get("como_ordenou") or "alfabetica"
     if como == "alfabetica" and n > 1:
-        achados.append(_achado(
-            False, TITULO_DA_ORDEM,
-            u"os nomes não trazem número de instância, então a ordem seria a "
-            u"alfabética — que só por acaso é a ordem anatômica. Corte trocado "
-            u"não aparece na tela: aparece no contorno, depois.",
-            resolve=False,
-            o_que_faz=u"renomeie com numeração (`img_0001`…) ou confira no MPR "
-                      u"e confirme que a ordem alfabética é a correta."))
+        achados.append(_achado(False, TITULO_DA_ORDEM, DETALHE_DA_ORDEM,
+                               resolve=False, o_que_faz=FAZ_DA_ORDEM))
     else:
         achados.append(_achado(
             True, u"Ordem dos cortes", u"veio do nome do arquivo (%s)." % como))
 
     g = dict(geometria or {})
-    faltando = [k for k in ("espacamento_mm", "espessura_mm", "orientacao",
-                            "posicao_paciente") if not g.get(k)]
-    if faltando:
-        achados.append(_achado(
-            False, u"A imagem não tem escala nem posição",
-            u"falta: %s. Um JPEG não guarda milímetro por pixel, espessura de "
-            u"corte nem orientação — e sem isso o TPS não consegue pôr a "
-            u"série no espaço para fundir." % ", ".join(faltando),
-            resolve=False,
-            o_que_faz=u"informe a escala e a orientação. Elas costumam estar "
-                      u"no laudo ou no rodapé da própria imagem."))
-    else:
+    faltas = [f for f in FALTAS_DA_GEOMETRIA if not g.get(f[0])]
+    for _campo, titulo, detalhe, o_que_faz in faltas:
+        achados.append(_achado(False, titulo, detalhe, resolve=False,
+                               o_que_faz=o_que_faz))
+    if not faltas:
         achados.append(_achado(
             True, u"Geometria informada",
             u"%s x %s mm/pixel, corte de %s mm, %s, %s."
@@ -446,14 +487,8 @@ def conferir(serie, geometria=None, com_carimbo=True):
                _mm(g["espessura_mm"]), g["orientacao"],
                g["posicao_paciente"])))
 
-    achados.append(_achado(
-        False, TITULO_SEM_DONO,
-        u"a série sai como paciente %s, com um ID gerado "
-        u"(%s-<data>-<hora>-<sufixo>), e "
-        u"a pasta de entrega leva um %s. No TPS ela pode virar paciente novo "
-        u"ou ser associada à pessoa errada: quem importa atribui."
-        % (DESCONHECIDO, PREFIXO_DO_ID, NOME_DO_LEIA_ME),
-        alerta=True))
+    achados.append(_achado(False, TITULO_SEM_DONO, DETALHE_SEM_DONO,
+                           alerta=True))
 
     achados.append(_achado(
         True, u"A série entra com Frame of Reference PRÓPRIO",
@@ -491,7 +526,8 @@ def decidiveis(serie):
                              "orientacao": "axial", "posicao_paciente": "HFS"},
                      com_carimbo=False)
     return set(a["titulo"] for a in sonda["achados"]
-               if (not a["ok"]) and a["resolve"] is False)
+               if (not a["ok"]) and a["resolve"] is False
+               and a["titulo"] in DECISOES)
 
 
 def volume(serie, teto=TETO_DO_VOLUME):
@@ -510,7 +546,27 @@ def volume(serie, teto=TETO_DO_VOLUME):
     return np.stack(cortes), passo
 
 
-def mpr(vol, passo, corte, er, ec, entre, orientacao="axial"):
+def apresentacao_do_mpr(orientacao, corte):
+    # GUARDA: os eixos saem de ORIENTACOES, a mesma tabela que grava o IOP e o
+    # IPP do DICOM; a tela mostra o que o DICOM diz, invertido ou não.
+    ori = str(orientacao) if str(orientacao) in ORIENTACOES else "axial"
+    r, c = ORIENTACOES[ori][:3], ORIENTACOES[ori][3:]
+    cortes = (r[1] * c[2] - r[2] * c[1], r[2] * c[0] - r[0] * c[2],
+              r[0] * c[1] - r[1] * c[0])
+    lado = r if corte == "linha" else c
+    tela = EIXOS_NA_TELA[PLANOS_DO_MPR[ori]["linha" if corte == "linha"
+                                            else "coluna"]]
+
+    def _dot(a, b):
+        return sum(float(x) * float(y) for x, y in zip(a, b))
+    if abs(_dot(cortes, tela["baixo"])) < 0.5:
+        return (True, _dot(cortes, tela["direita"]) < 0,
+                _dot(lado, tela["baixo"]) < 0)
+    return (False, _dot(cortes, tela["baixo"]) < 0,
+            _dot(lado, tela["direita"]) < 0)
+
+
+def mpr(vol, passo, corte, er, ec, entre, orientacao="axial", inverter=False):
     import numpy as np
     n, alt, larg = vol.shape
     if corte == "linha":
@@ -521,13 +577,21 @@ def mpr(vol, passo, corte, er, ec, entre, orientacao="axial"):
         lado_mm = float(er) * passo
     if lado_mm <= 0 or float(entre) <= 0:
         raise Recusa(u"escala e espessura precisam ser maiores que zero")
-    if str(orientacao) == "axial":
+    deitar, virar, espelhar = apresentacao_do_mpr(orientacao, corte)
+    if inverter:
+        virar = not virar
+    if virar:
         plano = plano[::-1, :]
-    linhas = int(round(n * float(entre) / lado_mm))
-    linhas = max(1, min(linhas, 4 * plano.shape[1]))
-    idx = np.clip((np.arange(linhas) * n / float(linhas)).astype(np.int64),
+    amostras = int(round(n * float(entre) / lado_mm))
+    amostras = max(1, min(amostras, 4 * plano.shape[1]))
+    idx = np.clip((np.arange(amostras) * n / float(amostras)).astype(np.int64),
                   0, n - 1)
-    return np.ascontiguousarray(plano[idx, :])
+    plano = plano[idx, :]
+    if espelhar:
+        plano = plano[:, ::-1]
+    if deitar:
+        plano = plano.T
+    return np.ascontiguousarray(plano)
 
 
 def converter(serie, destino, geometria, modalidade="MR", como="sc",
@@ -578,6 +642,8 @@ def converter(serie, destino, geometria, modalidade="MR", como="sc",
         raise Recusa(u"a série está vazia")
 
     g = dict(geometria)
+    if g.get("ordem_invertida") is True:
+        arqs = list(reversed(arqs))
     ori = ORIENTACOES.get(str(g.get("orientacao", "axial")).lower())
     if ori is None:
         raise Recusa(u"orientação `%s` desconhecida; use %s"
@@ -759,6 +825,7 @@ def gravar_recibo(destino, serie, geometria, resultado, quem=u"",
                 "entre_cortes_mm": g.get("entre_cortes_mm"),
                 "orientacao": g.get("orientacao"),
                 "posicao_paciente": g.get("posicao_paciente"),
+                "ordem_invertida": g.get("ordem_invertida") is True,
                 "fonte": u"digitada pelo operador — nao medida pelo equipamento",
             },
             "saida": {"cortes": resultado.get("gravados"),

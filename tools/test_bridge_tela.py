@@ -220,11 +220,10 @@ TRADUZIDAS = (
     u"as opções do PERSONALIZADO não vieram do ContourLab",
     u"descrição da série",
     u"espessura do corte (mm)", u"escala (mm por pixel)", u"mais ajustes",
-    u"Confirmo a escala", u"Confirmo a ordem dos cortes",
     u"Paciente DESCONHECIDO, ID", u"atribua ao paciente certo no TPS",
     u"tirada da descrição da série: confira",
     u"a descrição não diz a orientação: escolha",
-    u"informe a espessura do corte", u"confirme a escala ao lado do MPR",
+    u"informe a espessura do corte",
     u"uma imagem só: sem MPR",
     u"Alertas das outras séries escolhidas",
     u"não chegou a estes destinos:",
@@ -276,9 +275,16 @@ def novas_dos_modulos():
     import radai_image as RI
     import radai_image_screen as IS
     return (B.FRASE_DO_TETO, B.AJUDA[3], IS.AJUDA_NO_PIPELINE[1],
-            IS.AJUDA_NO_PIPELINE[2], IS.NOTA_DO_FRAME,
+            IS.AJUDA_NO_PIPELINE[2], IS.NOTA_DO_FRAME, IS.COMO_DESACHATAR,
             B.TITULO_DO_TEXTO_DECLARADO, B.TITULO_DA_CAPTURA,
-            RI.TITULO_SEM_CONFERIR_O_CARIMBO, RI.TITULO_DO_CARIMBO_NAO_CONFERIDO)
+            RI.TITULO_SEM_CONFERIR_O_CARIMBO, RI.TITULO_DO_CARIMBO_NAO_CONFERIDO,
+            RI.DETALHE_SEM_DONO, IS.NOTA_DO_ENTRE, IS.NOTA_DA_ORDEM, IS.MEDIR_COMO,
+            IS.NOTA_MEDIDA, IS.BOTAO_MEDIR, IS.BOTAO_INVERTER, IS.ROTULO_DO_TRACO,
+            IS.BOTAO_USAR_NA_ESCALA, IS.BOTAO_CONFIRMAR, IS.NOTA_DA_CONFIRMACAO,
+            IS.COBRA_A_CONFIRMACAO, IS.NOTA_DA_SUGERIDA, IS.AJUDA_NO_PIPELINE[0],
+            RI.TITULO_DO_TAMANHO, RI.DETALHE_DO_TAMANHO, RI.FAZ_DO_TAMANHO,
+            RI.TITULO_DA_ORDEM, RI.DETALHE_DA_ORDEM, RI.FAZ_DA_ORDEM) + tuple(
+                t for f in RI.FALTAS_DA_GEOMETRIA for t in f[1:])
 
 
 def novas_dos_modulos_v86():
@@ -442,7 +448,15 @@ def teste_a_estrutura():
            or not all(tab[F.normalizar(f)][1:])]
     checar(u"  e as dos módulos têm chave nos doze idiomas (%d)" % len(modulos),
            not sem, u" | ".join(f[:50] for f in sem[:5]))
-    pendentes = [f for f in NOVAS_V85 + NOVAS_V86 + novas_dos_modulos_v86()
+    import radai_image as RI
+    bordas = sorted(set(t for b in RI.BORDAS_DO_MPR.values() for t in b.values()))
+    sem = [f for f in bordas if F.normalizar(f) not in tab
+           or not all(tab[F.normalizar(f)][1:])]
+    checar(u"  e os rótulos das pontas do MPR (%s) têm chave nos doze idiomas"
+           % u", ".join(bordas), len(bordas) == 6 and not sem, u" | ".join(sem))
+    checar(u"  (isca) rótulo sem chave é acusado",
+           F.normalizar(u"cranial isca") not in tab)
+    pendentes =[f for f in NOVAS_V85 + NOVAS_V86 + novas_dos_modulos_v86()
                  if F.normalizar(f) not in tab]
     print(u"         · %d frase(s) nova(s) ainda sem tradução "
           u"(a tradução vem depois)" % len(pendentes))
@@ -608,7 +622,7 @@ def _abrir(pg, rota, idioma="pt-BR", tema=None):
 def _carregar(pg, pasta):
     pg.fill("#dc_pasta", pasta)
     pg.click("#dc_carregar")
-    pg.wait_for_function("DC.series.length > 0 && DC.rodando === 0"
+    pg.wait_for_function("DC.series.length > 0 && !DC.varre && DC.rodando === 0"
                          " && DC.filaMini.length === 0", timeout=20000)
     pg.wait_for_timeout(300)
 
@@ -927,7 +941,7 @@ def roteiro_envio(pg, estudo, tmp, prints):
             for a in arqs:
                 z.write(os.path.join(raiz, a), os.path.join(u"TC", a))
     pg.set_input_files("#dc_envio .ui-envio-arq", zp)
-    pg.wait_for_function("DC.series.length > 0", timeout=30000)
+    pg.wait_for_function("DC.series.length > 0 && !DC.varre", timeout=30000)
     pg.wait_for_timeout(600)
     checar(u"o .zip escolhido chega e vira série", pg.evaluate("DC.series.length") == 1,
            str(pg.evaluate("DC.series.length")))
@@ -941,7 +955,7 @@ def roteiro_envio(pg, estudo, tmp, prints):
     checar(u"  e a origem não é oferecida como destino (veio pelo navegador)",
            pg.evaluate("BG.origem") == u"")
     pg.set_input_files("#dc_envio .ui-envio-dir", os.path.join(estudo, u"RM"))
-    pg.wait_for_function("DC.series.length === 2", timeout=30000)
+    pg.wait_for_function("DC.series.length === 2 && !DC.varre", timeout=30000)
     checar(u"a segunda pasta escolhida SOMA à primeira (várias pastas)",
            pg.evaluate("DC.series.length") == 2)
     navegou = pg.evaluate("""(function(){
@@ -1043,8 +1057,8 @@ def roteiro_imagem(pg, estudo, tmp, prints):
     pg.wait_for_timeout(400)
     pg.click("#dc_converter")
     pg.wait_for_timeout(600)
-    checar(u"sem confirmar a escala, não converte",
-           pg.evaluate("!DC.conversao") and u"confirme a escala" in pg.inner_text("#im_aviso"),
+    checar(u"sem confirmar a escala e a ordem, não converte",
+           pg.evaluate("!DC.conversao") and u"a escala e a ordem" in pg.inner_text("#im_aviso"),
            pg.inner_text("#im_aviso"))
     pg.click("#im_conf_escala")
     pg.click("#dc_converter")
@@ -1116,13 +1130,740 @@ def roteiro_imagem(pg, estudo, tmp, prints):
     pg.wait_for_timeout(400)
 
 
+MEDIR_ESFERA = """(function(sel){
+ var img = document.querySelector(sel);
+ if(!img || !img.complete || !img.naturalWidth) return null;
+ var c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+ var g = c.getContext('2d'); g.drawImage(img, 0, 0);
+ var d = g.getImageData(0, 0, c.width, c.height).data, x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1;
+ for(var y = 0; y < c.height; y++) for(var x = 0; x < c.width; x++){
+  if(d[(y * c.width + x) * 4] > 128){
+   if(x < x0) x0 = x; if(x > x1) x1 = x; if(y < y0) y0 = y; if(y > y1) y1 = y;
+  }
+ }
+ if(x1 < 0) return null;
+ var r = img.getBoundingClientRect();
+ return ((y1 - y0 + 1) * r.height / img.naturalHeight)
+      / ((x1 - x0 + 1) * r.width / img.naturalWidth);
+})"""
+
+
+def _esfera_png(pasta, lado=128, esc=1.875, esp=3.0, raio=45.0):
+    import math
+    import numpy as np
+    os.makedirs(pasta, exist_ok=True)
+    n = int(math.ceil(2.0 * raio / esp)) + 4
+    zc = (n - 1) * esp / 2.0
+    yy, xx = np.mgrid[0:lado, 0:lado]
+    d2 = ((xx - lado / 2.0) * esc) ** 2 + ((yy - lado / 2.0) * esc) ** 2
+    for k in range(n):
+        r2 = raio ** 2 - (k * esp - zc) ** 2
+        _png(os.path.join(pasta, "img_%04d.png" % (k + 1)),
+             np.where((r2 > 0) & (d2 <= r2), 220, 10).astype(np.uint8).tolist())
+    return n
+
+
+def _redondas(razoes, alvo=1.0, tol=0.06):
+    return all(r and abs(r / alvo - 1.0) <= tol for r in razoes)
+
+
+def _mpr_desenhado(pg, entre, esc):
+    pg.wait_for_function(
+        """(function(a){ return ['linha', 'coluna'].every(function(c){
+             var i = document.querySelector('#im_mpr_' + c + ' img');
+             return i && i.complete && i.naturalWidth > 0
+               && i.src.indexOf('&entre=' + a[0] + '&') > 0
+               && i.src.indexOf('&er=' + a[1] + '&') > 0 }) })""",
+        arg=[entre, esc], timeout=15000)
+    pg.wait_for_timeout(150)
+    return [pg.evaluate(MEDIR_ESFERA, "#im_mpr_%s img" % c) or 0.0
+            for c in ("linha", "coluna")]
+
+
+def roteiro_mpr_da_imagem(pg, tmp, prints):
+    secao(u"o MPR da imagem renderizado: a esfera de 3 mm redonda, e a escala que achata")
+    import radai_image_screen as IS
+    raiz = os.path.join(tmp, u"ESFERA")
+    _esfera_png(os.path.join(raiz, u"RM_T2_AX"))
+    _abrir(pg, "/bridge/laudo")
+    _carregar(pg, raiz)
+    i = _indice_da_imagem(pg)
+    _clicar_e_esperar(pg, "#dcs%d" % i)
+    pg.click("#dc_avancar")
+    pg.wait_for_function("!document.getElementById('dc_e3').hidden", timeout=8000)
+    pg.evaluate("dcAbrir(%d)" % i)
+    pg.wait_for_function("IM.atual && !document.getElementById('dc_bloco_imagem').hidden",
+                         timeout=8000)
+    r = _mpr_desenhado(pg, "5", "1.875")
+    checar(u"sem espessura na descrição vale a sugerida (5 mm): a esfera de 3 mm sai "
+           u"esticada em 5/3 (%.3f e %.3f)" % tuple(r), _redondas(r, alvo=5 / 3.0, tol=0.08),
+           str(r))
+    pg.fill("#im_esp", u"3")
+    r = _mpr_desenhado(pg, "3", "1.875")
+    checar(u"com 3 mm digitados, o coronal e o sagital saem redondos na tela (%.3f e %.3f)"
+           % tuple(r), _redondas(r), str(r))
+    pg.evaluate("window.__geo = imGeometriaDe; imGeometriaDe = function(e){"
+                " var g = window.__geo(e); g.espessura_mm = 5; g.entre_cortes_mm = 0;"
+                " return g }; imMpr()")
+    isca = _mpr_desenhado(pg, "5", "1.875")
+    pg.evaluate("imGeometriaDe = window.__geo; imMpr()")
+    _mpr_desenhado(pg, "3", "1.875")
+    checar(u"a isca (a espessura digitada que não chega ao MPR) reprova a medida da tela",
+           not _redondas(isca), str(isca))
+    pg.fill("#im_esc", u"3,75")
+    r = _mpr_desenhado(pg, "3", "3.75")
+    checar(u"com a escala no dobro da real, a mesma esfera sai achatada pela metade "
+           u"(%.3f e %.3f)" % tuple(r), _redondas(r, alvo=0.5, tol=0.08), str(r))
+    checar(u"  e a tela diz o que fazer com o achatado que sobra com a espessura certa",
+           IS.COMO_DESACHATAR in pg.inner_text("#dc_bloco_imagem"))
+    pg.fill("#im_esc", u"1,875")
+    r = _mpr_desenhado(pg, "3", "1.875")
+    checar(u"  e voltando a escala real, redonda de novo (%.3f e %.3f)" % tuple(r),
+           _redondas(r), str(r))
+    _print(pg, prints, "11_imagem_mpr_esfera_3mm_1280_pt_escuro")
+    pg.click("#dc_limpar")
+    pg.wait_for_timeout(400)
+
+
+REGUA = (230, 380, 380)
+MARCA_DA_CABECA = 250
+
+
+def _fantoma_da_medida(pasta, lado=400, esc=0.5, esp=3.0, raio=40.0):
+    import math
+    import numpy as np
+    os.makedirs(pasta, exist_ok=True)
+    n = int(math.ceil(2.0 * raio / esp)) + 6
+    zc = (n - 1) * esp / 2.0
+    yy, xx = np.mgrid[0:lado, 0:lado]
+    d2 = ((xx - 200) * esc) ** 2 + ((yy - 190) * esc) ** 2
+    x0, x1, yr = REGUA
+    for j in range(n):
+        r2 = raio ** 2 - (j * esp - zc) ** 2
+        a = np.where((r2 > 0) & (d2 <= r2), 220, 10).astype(np.uint8)
+        if j >= n - 3:
+            a[(np.abs(xx - 200) < 6) & (np.abs(yy - 60) < 6)] = MARCA_DA_CABECA
+        a[yr - 1:yr + 2, x0:x1 + 1] = 240
+        a[yr - 7:yr + 1, x0 - 1:x0 + 2] = 240
+        a[yr - 7:yr + 1, x1 - 1:x1 + 2] = 240
+        _png(os.path.join(pasta, "img_%04d.png" % (n - j)), a.tolist())
+    return n
+
+
+def _fantoma_grande(pasta, larg=1600, alt=1200):
+    import numpy as np
+    os.makedirs(pasta, exist_ok=True)
+    a = np.full((alt, larg), 30, dtype=np.uint8)
+    a[598:603, 300:1301] = 240
+    for k in range(2):
+        _png(os.path.join(pasta, "img_%04d.png" % (k + 1)), a.tolist())
+
+
+PONTO_NA_TELA = """(function(p){
+  var img = document.querySelector('#im_visor .ue-img');
+  var r = img.getBoundingClientRect(), nw = img.naturalWidth, nh = img.naturalHeight;
+  var s = Math.min(r.width / nw, r.height / nh);
+  return [r.left + (r.width - nw * s) / 2 + p[0] * s,
+          r.top + (r.height - nh * s) / 2 + p[1] * s] })"""
+
+
+def _visor_a_vista(pg):
+    pg.wait_for_function("!document.querySelector('#im_visor .ui-organico')", timeout=15000)
+    pg.evaluate("document.getElementById('im_visor')"
+                ".scrollIntoView({block: 'center', behavior: 'instant'})")
+    pg.wait_for_timeout(250)
+
+
+def _medir(pg, a, b, mm, zoom=False):
+    pg.click("#im_medir")
+    pg.wait_for_timeout(250)
+    _visor_a_vista(pg)
+    if zoom:
+        pg.click("#im_visor [data-ue-ajustar]")
+        pg.wait_for_timeout(250)
+    pa = pg.evaluate(PONTO_NA_TELA, list(a))
+    pb = pg.evaluate(PONTO_NA_TELA, list(b))
+    pg.mouse.click(pa[0], pa[1])
+    pg.mouse.move((pa[0] + pb[0]) / 2.0, (pa[1] + pb[1]) / 2.0)
+    pg.mouse.click(pb[0], pb[1])
+    pg.wait_for_timeout(200)
+    pg.fill("#im_medir_mm", mm)
+    pg.press("#im_medir_mm", "Enter")
+    pg.wait_for_timeout(300)
+    try:
+        return float(pg.input_value("#im_esc").replace(",", "."))
+    except ValueError:
+        return 0.0
+
+
+def _marca_em_cima(pg, sel):
+    return pg.evaluate("""(function(a){
+      var img = document.querySelector(a[0]);
+      if(!img || !img.complete || !img.naturalWidth) return null;
+      var c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+      var g = c.getContext('2d'); g.drawImage(img, 0, 0);
+      var d = g.getImageData(0, 0, c.width, c.height).data, soma = 0, k = 0;
+      for(var y = 0; y < c.height; y++) for(var x = 0; x < c.width; x++)
+       if(d[(y * c.width + x) * 4] >= a[1]){ soma += y; k++ }
+      return k ? (soma / k) / c.height < 0.5 : null })""", [sel, MARCA_DA_CABECA - 5])
+
+
+def _confirmada(pg):
+    return pg.evaluate("document.getElementById('im_conf_escala').getAttribute('aria-pressed')") \
+        == u"true"
+
+
+def roteiro_medir_e_ordem(pg, tmp, prints):
+    secao(u"o ajuste da imagem: medir a escala, a distância entre cortes e a ordem")
+    import radai_image_screen as IS
+    import radai_image as RI
+    import radai_phrases as F
+    raiz = os.path.join(tmp, u"MEDIDA")
+    _fantoma_da_medida(os.path.join(raiz, u"RM_T2_AX_3mm"))
+    _fantoma_grande(os.path.join(raiz, u"RM_GRANDE_AX_5mm"))
+    _abrir(pg, "/bridge/laudo")
+    _carregar(pg, raiz)
+    ii = pg.evaluate("DC.series.map(function(s){ return s.descricao })")
+    i = [k for k, d in enumerate(ii) if u"T2" in d][0]
+    g = [k for k, d in enumerate(ii) if u"GRANDE" in d][0]
+    _clicar_e_esperar(pg, "#dcs%d" % i)
+    _clicar_e_esperar(pg, "#dcs%d" % g)
+    pg.click("#dc_avancar")
+    pg.wait_for_function("!document.getElementById('dc_e3').hidden", timeout=8000)
+    pg.evaluate("dcAbrir(%d)" % i)
+    pg.wait_for_function("IM.atual && !document.getElementById('dc_bloco_imagem').hidden",
+                         timeout=8000)
+    _mpr_desenhado(pg, "3", "0.6")
+
+    lugar = pg.evaluate("""(function(){
+      var e = document.getElementById('im_esp'), d = document.getElementById('im_entre');
+      return {fora: !d.closest('details'), visivel: d.offsetParent !== null,
+              linha: Math.abs(e.getBoundingClientRect().top - d.getBoundingClientRect().top),
+              nota: (document.getElementById('im_entre_nota') || {}).textContent || ''} })()""")
+    checar(u"a distância entre cortes está à vista, na linha da espessura, fora de "
+           u"«mais ajustes»", lugar["fora"] and lugar["visivel"] and lugar["linha"] < 2,
+           str(lugar))
+    checar(u"  com a frase do que ela é", lugar["nota"].strip() == IS.NOTA_DO_ENTRE,
+           lugar["nota"])
+
+    pg.click("#im_conf_escala")
+    pg.fill("#im_esp", u"3,5")
+    pg.fill("#im_entre", u"4")
+    pg.wait_for_timeout(300)
+    checar(u"trocar a espessura e a distância entre cortes não desmarca a confirmação",
+           _confirmada(pg))
+    ligacao = pg.evaluate("document.getElementById('im_esp').getAttribute('oninput')")
+    pg.evaluate("document.getElementById('im_esp').setAttribute('oninput', 'imEscalaMudou()')")
+    pg.fill("#im_esp", u"3")
+    isca = _confirmada(pg)
+    pg.evaluate("(function(v){ document.getElementById('im_esp').setAttribute('oninput', v) })",
+                ligacao)
+    checar(u"  (isca) a ligação antiga da espessura desmarcaria", not isca)
+    pg.fill("#im_entre", u"")
+    pg.fill("#im_esp", u"3")
+    if not _confirmada(pg):
+        pg.click("#im_conf_escala")
+    pg.fill("#im_esc", u"0,61")
+    pg.wait_for_timeout(200)
+    checar(u"  e trocar a escala desmarca", not _confirmada(pg))
+    pg.fill("#im_esc", u"0,6")
+    pg.click("#im_conf_escala")
+    _mpr_desenhado(pg, "3", "0.6")
+
+    x0, x1, yr = REGUA
+    pg.click("#im_medir")
+    pg.wait_for_timeout(250)
+    estado = pg.evaluate("""({camada: !!document.querySelector('#im_visor .ue-visor #im_medir_camada'),
+      apertado: document.getElementById('im_medir').getAttribute('aria-pressed'),
+      msg: document.getElementById('im_medir_msg').textContent,
+      zoom: document.querySelector('#im_visor .ue-img').style.transform})""")
+    checar(u"«Medir uma distância conhecida» põe a camada da medida sobre o axial, com a "
+           u"imagem inteira à vista e o que fazer",
+           estado["camada"] and estado["apertado"] == u"true" and not estado["zoom"]
+           and IS.MEDIR_COMO in estado["msg"], str(estado))
+    _visor_a_vista(pg)
+    pa = pg.evaluate(PONTO_NA_TELA, [x0, yr])
+    pb = pg.evaluate(PONTO_NA_TELA, [x1, yr])
+    pg.mouse.click(pa[0], pa[1])
+    pg.mouse.move(pb[0] - 30, pb[1])
+    pg.wait_for_timeout(150)
+    traco = pg.evaluate("""(function(){ var l = document.querySelector('#im_medir_camada .traco');
+      return l ? [+l.getAttribute('x1'), +l.getAttribute('x2'),
+                  getComputedStyle(l).display, l.getAttribute('class')] : null })()""")
+    checar(u"o traço aparece enquanto mede, do primeiro ponto ao cursor",
+           traco and traco[2] != u"none" and abs(traco[1] - traco[0]) > 20
+           and u"solto" in traco[3], str(traco))
+    _print(pg, prints, "12_imagem_medindo_1280_pt_escuro")
+    pg.keyboard.press("Escape")
+    pg.wait_for_timeout(200)
+    fim = pg.evaluate("""({camada: !!document.getElementById('im_medir_camada'),
+      apertado: document.getElementById('im_medir').getAttribute('aria-pressed'),
+      esc: document.getElementById('im_esc').value})""")
+    checar(u"Esc cancela: o traço sai e a escala fica como estava",
+           not fim["camada"] and fim["apertado"] == u"false" and fim["esc"] == u"0,6"
+           and _confirmada(pg), str(fim))
+
+    esc = _medir(pg, (x0, yr), (x1, yr), u"75")
+    checar(u"dois cliques na régua de 75 mm dão a escala real (%.4f, real 0,5)" % esc,
+           abs(esc - 0.5) <= 0.005, str(esc))
+    checar(u"  e a escala medida precisa da confirmação, e diz de onde veio",
+           not _confirmada(pg)
+           and pg.inner_text("#im_esc_nota").strip() == IS.NOTA_MEDIDA
+           and not pg.evaluate("!!document.getElementById('im_medir_camada')"),
+           pg.inner_text("#im_esc_nota"))
+    r = _mpr_desenhado(pg, "3", str(esc).rstrip("0").rstrip("."))
+    checar(u"  e o coronal sai redondo com ela (%.3f)" % r[0], _redondas(r[:1]), str(r))
+    pg.fill("#im_esc", u"0,52")
+    pg.wait_for_timeout(200)
+    checar(u"  e o campo continua editável",
+           pg.input_value("#im_esc") == u"0,52"
+           and pg.inner_text("#im_esc_nota").strip() != IS.NOTA_MEDIDA)
+
+    esc = _medir(pg, (120, 190), (280, 190), u"80", zoom=True)
+    checar(u"com o visor ampliado, a medida ainda acerta (%.4f)" % esc,
+           abs(esc - 0.5) <= 0.005, str(esc))
+    pg.evaluate("""window.__mapa = imMedirNaImagem; imMedirNaImagem = function(ev){
+      var img = document.querySelector('#im_visor .ue-img'), r = img.getBoundingClientRect();
+      var s = img.offsetWidth / img.naturalWidth;
+      return {x: (ev.clientX - r.left) / s, y: (ev.clientY - r.top) / s} }; 0""")
+    isca = _medir(pg, (120, 190), (280, 190), u"80", zoom=True)
+    pg.evaluate("imMedirNaImagem = window.__mapa; 0")
+    checar(u"  (isca) a medida que ignora a ampliação do visor reprova (%.4f)" % isca,
+           abs(isca - 0.5) > 0.02, str(isca))
+
+    pg.fill("#im_esc", u"0,5")
+    pg.wait_for_timeout(300)
+    _mpr_desenhado(pg, "3", "0.5")
+    cima = _marca_em_cima(pg, "#im_mpr_coluna img")
+    checar(u"série exportada da cabeça para os pés: no padrão, a cabeça sai embaixo no MPR",
+           cima is False, str(cima))
+    if not _confirmada(pg):
+        pg.click("#im_conf_escala")
+    antes = _confirmada(pg)
+    pg.click("#im_inverter")
+    checar(u"inverter a ordem desfaz a confirmação da escala e da ordem",
+           antes and not _confirmada(pg))
+    pg.wait_for_function("document.querySelector('#im_mpr_coluna img')"
+                         " && document.querySelector('#im_mpr_coluna img').src.indexOf('&inv=1') > 0"
+                         " && document.querySelector('#im_mpr_coluna img').complete", timeout=15000)
+    pg.wait_for_timeout(200)
+    cima = _marca_em_cima(pg, "#im_mpr_coluna img")
+    pedido = pg.evaluate("imPedido(IM.atual).geometria.ordem_invertida")
+    checar(u"«Inverter a ordem dos cortes» põe a cabeça em cima e vai ao pedido da conversão",
+           cima is True and pedido is True
+           and pg.evaluate("document.getElementById('im_inverter').getAttribute('aria-pressed')")
+           == u"true", u"%s %s" % (cima, pedido))
+    _print(pg, prints, "13_imagem_ordem_invertida_1280_pt_escuro")
+    pg.evaluate("window.__geo = imGeometriaDe; imGeometriaDe = function(e){"
+                " var g = window.__geo(e); g.ordem_invertida = false; return g }; imMpr()")
+    pg.wait_for_function("document.querySelector('#im_mpr_coluna img').src.indexOf('&inv=0') > 0"
+                         " && document.querySelector('#im_mpr_coluna img').complete", timeout=15000)
+    pg.wait_for_timeout(200)
+    isca = _marca_em_cima(pg, "#im_mpr_coluna img")
+    pg.evaluate("imGeometriaDe = window.__geo; imMpr()")
+    checar(u"  (isca) a inversão que não chega ao MPR deixa a cabeça embaixo e reprova",
+           isca is False, str(isca))
+    pg.click("#im_inverter")
+    pg.wait_for_timeout(600)
+    checar(u"  e desligar volta ao padrão",
+           pg.evaluate("imPedido(IM.atual).geometria.ordem_invertida") is False)
+
+    pg.evaluate("dcAbrir(%d)" % g)
+    pg.wait_for_function("IM.atual && IM.atual.descricao.indexOf('GRANDE') >= 0", timeout=8000)
+    pg.wait_for_function("document.querySelector('#im_visor .ue-img')"
+                         " && document.querySelector('#im_visor .ue-img').naturalWidth > 0",
+                         timeout=15000)
+    pg.wait_for_timeout(300)
+    nat = pg.evaluate("document.querySelector('#im_visor .ue-img').naturalWidth")
+    esc = _medir(pg, (150, 300), (650, 300), u"50")
+    checar(u"imagem de 1600 pixels (prévia de %d): a régua de 1000 pixels e 50 mm dá "
+           u"0,05 (%.4f)" % (nat, esc), nat == 800 and abs(esc - 0.05) <= 0.0006, str(esc))
+    pg.evaluate("IM.atual.__passo = IM.atual.passo_previa; IM.atual.passo_previa = 1")
+    isca = _medir(pg, (150, 300), (650, 300), u"50")
+    pg.evaluate("IM.atual.passo_previa = IM.atual.__passo")
+    checar(u"  (isca) a medida que esquece a redução da prévia dá o dobro e reprova (%.4f)"
+           % isca, abs(isca - 0.05) > 0.01, str(isca))
+
+    pg.click("#dc_limpar")
+    pg.wait_for_timeout(400)
+
+    secao(u"o alerta da imagem sem dono, em inglês: título e detalhe traduzidos")
+    _abrir(pg, "/bridge/laudo", idioma="en")
+    _carregar(pg, raiz)
+    i = _indice_da_imagem(pg)
+    _clicar_e_esperar(pg, "#dcs%d" % i)
+    pg.click("#dc_avancar")
+    pg.wait_for_function("IM.atual && !document.getElementById('dc_bloco_imagem').hidden",
+                         timeout=8000)
+    pg.wait_for_function("document.querySelectorAll('#im_laudo .dc-falta').length > 0",
+                         timeout=15000)
+    pg.wait_for_timeout(1500)
+    laudo = pg.inner_text("#im_laudo")
+    d = F.construir()["en"]
+    achado = [a for a in RI.conferir({"n": 1, "uniforme": True, "dimensoes": [(8, 8)],
+                                      "como_ordenou": "numero no nome"},
+                                     com_carimbo=False)["achados"]
+              if a["titulo"] == RI.TITULO_SEM_DONO][0]
+    ingles = d.get(F.normalizar(achado["detalhe"])) or u"?"
+    checar(u"o detalhe da imagem sem dono sai em inglês, inteiro",
+           F.normalizar(ingles) in F.normalizar(laudo)
+           and F.normalizar(achado["detalhe"]) not in F.normalizar(laudo), laudo[:300])
+    pg.click("#dc_limpar")
+    pg.wait_for_timeout(400)
+    _abrir(pg, "/bridge/laudo")
+
+
+MARCAS_LPS = {"cabeca": 250, "frente": 180, "esquerda": 120}
+
+
+def _serie_lps(pasta, ori, de_tras_para_frente=False, k=2):
+    import numpy as np
+    os.makedirs(pasta, exist_ok=True)
+    X, Y, Z = 48 * k, 40 * k, 56 * k
+    v = np.full((X, Y, Z), 10, dtype=np.uint8)
+    v[4 * k:X - 4 * k, 3 * k:Y - 3 * k, 3 * k:Z - 3 * k] = 60
+    cx, cy, cz, h = X // 2, Y // 2, Z // 2, 2 * k
+    v[cx - h:cx + h + 1, cy - h:cy + h + 1, Z - 9 * k:Z - 4 * k] = MARCAS_LPS["cabeca"]
+    v[cx - h:cx + h + 1, 3 * k:8 * k, cz - h:cz + h + 1] = MARCAS_LPS["frente"]
+    v[X - 9 * k:X - 4 * k, cy - h:cy + h + 1, cz - h:cz + h + 1] = MARCAS_LPS["esquerda"]
+    if ori == "axial":
+        cortes = [v[:, :, z].T for z in range(0, Z, 2)]
+    elif ori == "coronal":
+        cortes = [v[:, y, ::-1].T for y in range(0, Y, 2)]
+    else:
+        cortes = [v[x, :, ::-1].T for x in range(X - 1, -1, -2)]
+    if de_tras_para_frente:
+        cortes = cortes[::-1]
+    for j, a in enumerate(cortes):
+        _png(os.path.join(pasta, "img_%04d.png" % (j + 1)), a.tolist())
+
+
+BORDAS_E_MARCAS = """(function(a){
+  var q = document.querySelector(a[0]), img = q && q.querySelector('img');
+  if(!img || !img.complete || !img.naturalWidth) return null;
+  var r = img.getBoundingClientRect();
+  var fora = {img: [r.left, r.top, r.right, r.bottom], nat: [img.naturalWidth, img.naturalHeight],
+              classe: q.className, bordas: {}, marcas: {}};
+  q.querySelectorAll('.im-mpr-borda').forEach(function(el){
+    var b = el.getBoundingClientRect();
+    fora.bordas[el.getAttribute('data-im-borda')] = {txt: el.textContent.trim(),
+      x: (b.left + b.right) / 2, y: (b.top + b.bottom) / 2,
+      esq: b.left, dir: b.right, topo: b.top, pe: b.bottom};
+  });
+  var c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+  var g = c.getContext('2d'); g.drawImage(img, 0, 0);
+  var d = g.getImageData(0, 0, c.width, c.height).data;
+  a[1].forEach(function(v){
+    var sx = 0, sy = 0, k = 0;
+    for(var y = 0; y < c.height; y++) for(var x = 0; x < c.width; x++)
+      if(Math.abs(d[(y * c.width + x) * 4] - v) <= 5){ sx += x + .5; sy += y + .5; k++ }
+    if(k >= 3) fora.marcas[v] = [r.left + sx / k * r.width / c.width,
+                                 r.top + sy / k * r.height / c.height];
+  });
+  return fora })"""
+
+
+def _bordas(pg, corte):
+    return pg.evaluate(BORDAS_E_MARCAS, ["#im_mpr_" + corte,
+                                         [int(v * 255 / 256) for v in MARCAS_LPS.values()]])
+
+
+def _rotulo_perto(info, marca, lados):
+    p = ((info or {}).get("marcas") or {}).get(str(int(MARCAS_LPS[marca] * 255 / 256)))
+    bs = [(lado, b) for lado, b in ((info or {}).get("bordas") or {}).items() if lado in lados]
+    if not p or not bs:
+        return None
+    return min(bs, key=lambda x: (x[1]["x"] - p[0]) ** 2 + (x[1]["y"] - p[1]) ** 2)[1]["txt"]
+
+
+def _fora_da_imagem(info):
+    l, t, r, b = info["img"]
+    bs = info["bordas"]
+    return all({"cima": lambda e: e["pe"] <= t + 1, "baixo": lambda e: e["topo"] >= b - 1,
+                "esquerda": lambda e: e["dir"] <= l + 1,
+                "direita": lambda e: e["esq"] >= r - 1}[lado](e) for lado, e in bs.items())
+
+
+def _abrir_imagem(pg, desc):
+    ii = pg.evaluate("DC.series.map(function(s){ return s.descricao })")
+    i = [k for k, d in enumerate(ii) if desc in d][0]
+    pg.evaluate("dcAbrir(%d)" % i)
+    pg.wait_for_function("(function(d){ return IM.atual && IM.atual.descricao.indexOf(d) >= 0"
+                         " && !document.getElementById('dc_bloco_imagem').hidden })",
+                         arg=desc, timeout=8000)
+    pg.fill("#im_esc", u"2")
+    _mpr_desenhado(pg, "4", "2")
+    pg.wait_for_function("(function(){ var b = 'b=' + encodeURIComponent(IM.atual.bilhete) + '&';"
+                         " return ['linha', 'coluna'].every(function(c){"
+                         " var i = document.querySelector('#im_mpr_' + c + ' img');"
+                         " return i && i.complete && i.src.indexOf(b) > 0 })"
+                         " && document.querySelectorAll('#im_mpr_coluna .im-mpr-borda').length"
+                         " > 0 })()", timeout=8000)
+    pg.wait_for_timeout(150)
+
+
+def _mpr_sem_brilho(pg):
+    pg.wait_for_function("!document.querySelector('#im_mpr_linha .ui-organico,"
+                         " #im_mpr_coluna .ui-organico')", timeout=20000)
+    pg.wait_for_timeout(200)
+
+
+def _esperar_inv(pg, inv):
+    pg.wait_for_function("(function(v){ return ['linha', 'coluna'].every(function(c){"
+                         " var i = document.querySelector('#im_mpr_' + c + ' img');"
+                         " return i && i.src.indexOf('&inv=' + v) > 0 && i.complete"
+                         " && document.querySelectorAll('#im_mpr_' + c + ' .im-mpr-borda')"
+                         ".length === 4 }) })", arg=inv, timeout=15000)
+    pg.wait_for_timeout(150)
+
+
+def roteiro_bordas_do_mpr(pg, tmp, prints):
+    secao(u"as pontas do MPR da imagem: cranial, caudal e os lados, e a série coronal ou sagital "
+          u"na apresentação padrão")
+    raiz = os.path.join(tmp, u"BORDAS")
+    _serie_lps(os.path.join(raiz, u"RM_T2_AX_4mm_CABECA_PRIMEIRO"), "axial",
+               de_tras_para_frente=True)
+    _serie_lps(os.path.join(raiz, u"RM_T1_COR_4mm"), "coronal")
+    _serie_lps(os.path.join(raiz, u"RM_T1_SAG_4mm"), "sagital")
+    _abrir(pg, "/bridge/laudo")
+    _carregar(pg, raiz)
+    ii = pg.evaluate("DC.series.map(function(s){ return s.descricao })")
+    for k in range(len(ii)):
+        _clicar_e_esperar(pg, "#dcs%d" % k)
+    pg.click("#dc_avancar")
+    pg.wait_for_function("!document.getElementById('dc_e3').hidden", timeout=8000)
+
+    _abrir_imagem(pg, u"AX")
+    cor, sag = _bordas(pg, "linha"), _bordas(pg, "coluna")
+    rot = dict((c, pg.inner_text("#im_mpr_%s_rot" % c).strip().lower()) for c in ("linha", "coluna"))
+    checar(u"série axial: o coronal com cranial em cima, caudal embaixo e a direita do paciente "
+           u"à esquerda da tela; o sagital com cranial, caudal, anterior e posterior",
+           rot == {"linha": u"coronal", "coluna": u"sagital"}
+           and dict((k, v["txt"]) for k, v in cor["bordas"].items())
+           == {"cima": u"cranial", "baixo": u"caudal", "esquerda": u"direita do paciente",
+               "direita": u"esquerda do paciente"}
+           and dict((k, v["txt"]) for k, v in sag["bordas"].items())
+           == {"cima": u"cranial", "baixo": u"caudal", "esquerda": u"anterior",
+               "direita": u"posterior"}, u"%s %s %s" % (rot, cor["bordas"], sag["bordas"]))
+    checar(u"  nas pontas, fora da imagem (a anatomia da beira continua à vista)",
+           _fora_da_imagem(cor) and _fora_da_imagem(sag), u"%s %s" % (cor["img"], cor["bordas"]))
+    checar(u"  exportada da cabeça para os pés, no padrão a cabeça aparece junto de «caudal», "
+           u"no coronal e no sagital",
+           _rotulo_perto(cor, "cabeca", ("cima", "baixo")) == u"caudal"
+           and _rotulo_perto(sag, "cabeca", ("cima", "baixo")) == u"caudal",
+           u"%s %s" % (_rotulo_perto(cor, "cabeca", ("cima", "baixo")),
+                       _rotulo_perto(sag, "cabeca", ("cima", "baixo"))))
+    pg.click("#im_inverter")
+    _esperar_inv(pg, 1)
+    cor, sag = _bordas(pg, "linha"), _bordas(pg, "coluna")
+    checar(u"  invertida, a imagem vira e os rótulos ficam: a cabeça junto de «cranial»",
+           cor["bordas"]["cima"]["txt"] == u"cranial"
+           and _rotulo_perto(cor, "cabeca", ("cima", "baixo")) == u"cranial"
+           and _rotulo_perto(sag, "cabeca", ("cima", "baixo")) == u"cranial",
+           u"%s %s" % (_rotulo_perto(cor, "cabeca", ("cima", "baixo")), cor["bordas"]))
+    _mpr_sem_brilho(pg)
+    _print(pg, prints, "15_imagem_mpr_bordas_invertida_1280_pt_escuro")
+    pg.evaluate("""window.__bd = imBordas; imBordas = function(q, p){ window.__bd(q, p);
+      var e = imEstado(IM.atual), c = q.querySelector('[data-im-borda=cima]'),
+          b = q.querySelector('[data-im-borda=baixo]');
+      if(e && e.invertida && c && b){ var t = c.textContent; c.textContent = b.textContent;
+        b.textContent = t } }; imMpr()""")
+    _esperar_inv(pg, 1)
+    isca = _rotulo_perto(_bordas(pg, "coluna"), "cabeca", ("cima", "baixo"))
+    pg.evaluate("imBordas = window.__bd; imMpr()")
+    _esperar_inv(pg, 1)
+    checar(u"  (isca) os rótulos que trocam com a inversão deixam a cabeça junto de «caudal» "
+           u"e reprovam", isca == u"caudal", str(isca))
+    pg.click("#im_inverter")
+    _esperar_inv(pg, 0)
+
+    _abrir_imagem(pg, u"COR")
+    ax, sag = _bordas(pg, "linha"), _bordas(pg, "coluna")
+    rot = dict((c, pg.inner_text("#im_mpr_%s_rot" % c).strip().lower()) for c in ("linha", "coluna"))
+    checar(u"série coronal: o axial sem rótulo e o sagital de pé, com o eixo dos cortes na "
+           u"horizontal (%dx%d)" % tuple(sag["nat"]),
+           rot == {"linha": u"axial", "coluna": u"sagital"} and not ax["bordas"]
+           and u"com-bordas" not in ax["classe"] and sag["nat"][1] > sag["nat"][0],
+           u"%s %s %s" % (rot, ax["bordas"], sag["nat"]))
+    checar(u"  e a cabeça junto de «cranial» e a frente junto de «anterior»",
+           _rotulo_perto(sag, "cabeca", ("cima", "baixo")) == u"cranial"
+           and _rotulo_perto(sag, "frente", ("esquerda", "direita")) == u"anterior",
+           u"%s %s" % (_rotulo_perto(sag, "cabeca", ("cima", "baixo")),
+                       _rotulo_perto(sag, "frente", ("esquerda", "direita"))))
+
+    _abrir_imagem(pg, u"SAG")
+    ax, cor = _bordas(pg, "linha"), _bordas(pg, "coluna")
+    rot = dict((c, pg.inner_text("#im_mpr_%s_rot" % c).strip().lower()) for c in ("linha", "coluna"))
+    checar(u"série sagital: o axial sem rótulo e o coronal de pé (%dx%d)" % tuple(cor["nat"]),
+           rot == {"linha": u"axial", "coluna": u"coronal"} and not ax["bordas"]
+           and cor["nat"][1] > cor["nat"][0], u"%s %s" % (rot, cor["nat"]))
+    checar(u"  com a cabeça junto de «cranial» e a esquerda do paciente junto de «esquerda do "
+           u"paciente», à direita da tela",
+           _rotulo_perto(cor, "cabeca", ("cima", "baixo")) == u"cranial"
+           and _rotulo_perto(cor, "esquerda", ("esquerda", "direita")) == u"esquerda do paciente",
+           u"%s %s" % (_rotulo_perto(cor, "cabeca", ("cima", "baixo")),
+                       _rotulo_perto(cor, "esquerda", ("esquerda", "direita"))))
+    _mpr_sem_brilho(pg)
+    _print(pg, prints, "16_imagem_mpr_bordas_sagital_1280_pt_escuro")
+    pg.click("#dc_limpar")
+    pg.wait_for_timeout(400)
+
+    secao(u"as pontas do MPR em alemão, no tema claro")
+    import radai_phrases as F
+    de = F.construir()["de"]
+    _abrir(pg, "/bridge/laudo", idioma="de", tema="claro")
+    _carregar(pg, raiz)
+    ii = pg.evaluate("DC.series.map(function(s){ return s.descricao })")
+    for k in range(len(ii)):
+        _clicar_e_esperar(pg, "#dcs%d" % k)
+    pg.click("#dc_avancar")
+    pg.wait_for_function("!document.getElementById('dc_e3').hidden", timeout=8000)
+    _abrir_imagem(pg, u"SAG")
+    pg.wait_for_timeout(900)
+    cor = _bordas(pg, "coluna")
+    esperado = dict((k, de.get(F.normalizar(t)) or u"?") for k, t in
+                    ((u"cima", u"cranial"), (u"baixo", u"caudal"),
+                     (u"esquerda", u"direita do paciente"), (u"direita", u"esquerda do paciente")))
+    checar(u"os rótulos saem em alemão (%s)" % u", ".join(esperado[k] for k in sorted(esperado)),
+           dict((k, v["txt"]) for k, v in cor["bordas"].items()) == esperado
+           and u"?" not in esperado.values(), str(cor["bordas"]))
+    fundo = pg.evaluate("getComputedStyle(document.getElementById('im_mpr_coluna')).backgroundColor")
+    checar(u"  e o palco do MPR continua escuro no tema claro", fundo in (u"rgb(0, 0, 0)",),
+           fundo)
+    _mpr_sem_brilho(pg)
+    _print(pg, prints, "17_imagem_mpr_bordas_1280_de_claro")
+    pg.click("#dc_limpar")
+    pg.wait_for_timeout(400)
+    _abrir(pg, "/bridge/laudo")
+
+
+ACENTO_PT = re.compile(u"[çãõáêéíóúâôàÇÃÕÁÊÉÍÓÚÂÔÀ]")
+PALAVRAS_PT = re.compile(u"\\b(falta|cortes|imagens|informe|renomeie|separe|tamanhos|"
+                         u"sugerida|confira|alertas?)\\b", re.I)
+TEXTOS_VISIVEIS = r"""(function(ids){
+  var fora = [];
+  ids.forEach(function(id){
+    var raiz = document.getElementById(id); if(!raiz || raiz.hidden) return;
+    var w = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT, null, false), n;
+    while(n = w.nextNode()){
+      var t = n.nodeValue.replace(/\s+/g, ' ').trim(); if(!t) continue;
+      if(n.parentNode.closest('[hidden],script,style')) continue;
+      fora.push(t);
+    }
+  });
+  return fora })"""
+
+
+def _em_portugues(textos):
+    return [t for t in textos if ACENTO_PT.search(t) or PALAVRAS_PT.search(t)]
+
+
+def _imagens_dos_alertas(raiz):
+    import numpy as np
+    sem_ori = os.path.join(raiz, u"RM_T2_3mm")
+    os.makedirs(sem_ori)
+    for k in range(6):
+        a = np.full((64, 64), 20 + 10 * k, dtype=np.uint8)
+        a[20:40, 20:40] = 200
+        _png(os.path.join(sem_ori, "img_%04d.png" % (k + 1)), a.tolist())
+    alfa = os.path.join(raiz, u"TC_AX_ALFA")
+    os.makedirs(alfa)
+    for nome in ("alfa", "beta", "gama", "delta"):
+        a = np.full((48, 48), 40, dtype=np.uint8)
+        a[10:30, 10:30] = 180
+        _png(os.path.join(alfa, nome + ".png"), a.tolist())
+    mista = os.path.join(raiz, u"RM_AX_MISTA")
+    os.makedirs(mista)
+    for k, lado in enumerate((40, 40, 56)):
+        _png(os.path.join(mista, "img_%04d.png" % (k + 1)),
+             np.full((lado, lado), 60, dtype=np.uint8).tolist())
+
+
+def roteiro_alertas_em_ingles(pg, tmp, prints):
+    secao(u"os alertas e as notas do ajuste da imagem, em inglês: nenhuma frase em português")
+    import radai_image as RI
+    import radai_image_screen as IS
+    import radai_phrases as F
+    en = F.construir()["en"]
+
+    def _en(t):
+        return en.get(F.normalizar(t)) or u"?"
+    raiz = os.path.join(tmp, u"ALERTAS_EN")
+    _imagens_dos_alertas(raiz)
+    _abrir(pg, "/bridge/laudo", idioma="en")
+    _carregar(pg, raiz)
+    ds = pg.evaluate("DC.series.map(function(s){ return s.descricao })")
+    for k in range(len(ds)):
+        _clicar_e_esperar(pg, "#dcs%d" % k, 250)
+    pg.click("#dc_avancar")
+    pg.wait_for_function("!document.getElementById('dc_e3').hidden", timeout=8000)
+    vistos, caixas = {}, {}
+    for k, d in enumerate(ds):
+        pg.evaluate("dcAbrir(%d)" % k)
+        pg.wait_for_function("IM.atual && IM.atual.descricao === %s"
+                             " && document.querySelectorAll('#im_laudo .dc-falta').length > 0"
+                             % json.dumps(d), timeout=15000)
+        pg.wait_for_timeout(3300)
+        textos = pg.evaluate(TEXTOS_VISIVEIS, ["dc_bloco_imagem", "dc_diag_lista",
+                                               "dc_outras"])
+        vistos[d] = textos
+        caixas[d] = pg.evaluate("Array.prototype.map.call(document.querySelectorAll("
+                                "'#im_laudo .dc-falta'), function(e){ return [e.className,"
+                                " (e.querySelector('.tt') || {}).textContent || ''] })")
+        checar(u"%s: nada em português no ajuste, na lista e nos alertas das outras" % d,
+               not _em_portugues(textos), u" | ".join(_em_portugues(textos))[:300])
+        if u"MISTA" in d:
+            _print(pg, prints, "14_imagem_alertas_en_escuro")
+    junto = dict((d, u" ".join(t)) for d, t in vistos.items())
+    sem_ori = [d for d in ds if u"3mm" in d][0]
+    alfa = [d for d in ds if u"ALFA" in d][0]
+    mista = [d for d in ds if u"MISTA" in d][0]
+    ori = [f for f in RI.FALTAS_DA_GEOMETRIA if f[0] == "orientacao"][0]
+    checar(u"a pasta que não diz a orientação: um alerta só, o da orientação, inteiro em inglês",
+           all(_en(t) in junto[sem_ori] for t in ori[1:])
+           and _en(RI.FALTAS_DA_GEOMETRIA[0][1]) not in junto[sem_ori], junto[sem_ori][-400:])
+    checar(u"  e a nota da escala sugerida sai inteira, com os números como valor",
+           _en(IS.NOTA_DA_SUGERIDA).replace(u"%s", u"240", 1).replace(u"%s", u"64x64", 1)
+           in junto[sem_ori], junto[sem_ori][:400])
+    checar(u"a ordem alfabética: título, detalhe e o que fazer em inglês",
+           all(_en(t) in junto[alfa] for t in (RI.TITULO_DA_ORDEM, RI.DETALHE_DA_ORDEM,
+                                               RI.FAZ_DA_ORDEM)), junto[alfa][-500:])
+    checar(u"os tamanhos diferentes: em inglês, com os tamanhos como valor, e «não converte»",
+           _en(RI.TITULO_DO_TAMANHO) in junto[mista]
+           and _en(RI.DETALHE_DO_TAMANHO).replace(u"%s", u"40x40, 56x56") in junto[mista]
+           and _en(u"não converte") in junto[mista], junto[mista][-500:])
+    tamanho = [c for c, t in caixas[mista] if t.strip() == _en(RI.TITULO_DO_TAMANHO)]
+    checar(u"  e não aparece como decisão a confirmar: é o que impede a conversão",
+           len(tamanho) == 1 and u"ruim" in tamanho[0] and u"decide" not in tamanho[0],
+           str(caixas[mista]))
+    pg.evaluate("dcAbrir(%d)" % ds.index(sem_ori))
+    pg.wait_for_timeout(600)
+    pg.evaluate("dcConverter()")
+    pg.wait_for_timeout(1500)
+    aviso = pg.inner_text("#im_aviso").strip()
+    checar(u"a cobrança da confirmação sai em inglês", aviso == _en(IS.COBRA_A_CONFIRMACAO),
+           aviso)
+    pg.evaluate("document.getElementById('im_laudo').insertAdjacentHTML('beforeend',"
+                " '<div class=\"dd\">falta: orientacao. Um JPEG não guarda milímetro</div>');"
+                " if(window.radaiRetraduzir) window.radaiRetraduzir()")
+    pg.wait_for_timeout(1200)
+    isca = _em_portugues(pg.evaluate(TEXTOS_VISIVEIS, ["dc_bloco_imagem"]))
+    checar(u"  (isca) a frase antiga, sem chave, posta na tela, é achada pela medida",
+           any(u"orientacao" in t for t in isca), str(isca)[:200])
+    pg.click("#dc_limpar")
+    pg.wait_for_timeout(400)
+    _abrir(pg, "/bridge/laudo")
+
+
 def roteiro_cd(pg, estudo, prints):
     secao(u"«Carregar um CD» na tela (os drives dublados)")
     _abrir(pg, "/bridge/laudo")
     bts = pg.evaluate("Array.from(document.querySelectorAll('#dc_envio .ui-envio-bts button'))"
                       ".map(function(b){ return b.textContent.trim() })")
-    checar(u"três opções no quadro de carregar, a terceira é «Carregar um CD»",
-           bts == [u"Escolher arquivos", u"Escolher pasta", u"Carregar um CD"], str(bts))
+    checar(u"quatro opções no quadro de carregar: a terceira é «Carregar um CD» e "
+           u"a quarta, «Importar imagem»",
+           bts == [u"Escolher arquivos", u"Escolher pasta", u"Carregar um CD",
+                   u"Importar imagem"], str(bts))
     checar(u"  com o ícone de disco em SVG",
            pg.evaluate("!!document.querySelector('#dc_cd_bt svg.ui-ic')"))
     escolhas = []
@@ -1277,6 +2018,10 @@ def teste_no_navegador(prints):
                 for f in (lambda: roteiro_pipeline(pg, estudo, uids, base_tmp, prints),
                           lambda: roteiro_envio(pg, estudo, base_tmp, prints),
                           lambda: roteiro_imagem(pg, estudo, base_tmp, prints),
+                          lambda: roteiro_mpr_da_imagem(pg, base_tmp, prints),
+                          lambda: roteiro_medir_e_ordem(pg, base_tmp, prints),
+                          lambda: roteiro_bordas_do_mpr(pg, base_tmp, prints),
+                          lambda: roteiro_alertas_em_ingles(pg, base_tmp, prints),
                           lambda: roteiro_cd(pg, estudo, prints),
                           lambda: roteiro_endereco_antigo(pg),
                           lambda: roteiro_idioma_e_tema(pg, estudo, prints)):

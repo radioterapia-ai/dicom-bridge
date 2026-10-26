@@ -470,10 +470,22 @@ function dcVarrer(){
  if(!p){ bgMsg('dc_msg', 'informe a pasta do estudo', 'erro'); bgTremer(bgEl('dc_pasta')); return }
  dcCarregar(p);
 }
+function dcResumoDaCarga(n, d, parado){
+ var ign = (d.ignorados || []).length, ni = DC.imagens.length;
+ bgMsgHTML('dc_msg', '<b>' + n + '</b> ' + bgF('série(s)')
+   + (ni ? ' &middot; <b>' + ni + '</b> ' + bgF(ni === 1 ? 'série de imagem (JPEG ou PNG) nesta pasta'
+      : 'séries de imagem (JPEG ou PNG) nesta pasta') : '')
+   + (ign ? ' &middot; <b>' + ign + '</b> ' + bgF('arquivo(s) ignorado(s)') : '')
+   + (parado ? ' &middot; ' + bgF('A busca foi interrompida: a lista tem só o que foi achado até ali.') : ''),
+   'ok');
+}
 function dcCarregar(pasta, leitura){
  DC.fonte = pasta;
+ if(DC.varre && DC.varre.vivo()) DC.varre.parar(true);
+ DC.varre = null;
  dcZerar();
  bgMsg('dc_msg', 'lendo os cabeçalhos…', '');
+ if(!leitura && window.uiVarrer){ dcCarregarAosPoucos(pasta); return }
  var pedido = {pasta: pasta};
  if(leitura) pedido.leitura = leitura;
  bgPost('/api/bridge/varrer', pedido).then(function(d){
@@ -483,13 +495,59 @@ function dcCarregar(pasta, leitura){
   BG.origem = d.origem || '';
   dcPintarGrade();
   bgPintarDestinos();
-  var ign = (d.ignorados || []).length, ni = DC.imagens.length;
-  bgMsgHTML('dc_msg', '<b>' + (d.series || []).length + '</b> ' + bgF('série(s)')
-    + (ni ? ' &middot; <b>' + ni + '</b> ' + bgF(ni === 1 ? 'série de imagem (JPEG ou PNG) nesta pasta'
-       : 'séries de imagem (JPEG ou PNG) nesta pasta') : '')
-    + (ign ? ' &middot; <b>' + ign + '</b> ' + bgF('arquivo(s) ignorado(s)') : ''), 'ok');
+  dcResumoDaCarga((d.series || []).length, d);
   dcEtapa(2, true);
  }).catch(function(e){ bgErro('dc_msg', 'não consegui varrer', e) });
+}
+function dcLendoHTML(d){
+ return '<span class="ui-gira" aria-hidden="true"></span> ' + bgF('lendo os cabeçalhos…')
+  + ' &middot; <b>' + (d.series | 0) + '</b> ' + bgF('série(s)')
+  + ' &middot; <b>' + (d.arquivos | 0) + '</b> ' + bgF('arquivos')
+  + ' <button type="button" class="ui-bt dc-parar" onclick="dcPararCarga()">'
+  + bgF('Parar a leitura') + '</button>';
+}
+function dcPararCarga(){
+ var b = document.querySelector('#dc_msg .dc-parar'); if(b) b.disabled = true;
+ if(DC.varre && DC.varre.vivo()) DC.varre.parar();
+}
+function dcCarregarAosPoucos(pasta){
+ DC.series = []; DC.imagens = [];
+ dcPintarGrade();
+ var viu = false, ctl = null;
+ function primeira(){
+  if(viu || !DC.series.length) return;
+  viu = true;
+  dcEtapa(2, true);
+ }
+ ctl = window.uiVarrer({uso: 'bridge', chave: 'bridge', pasta: pasta,
+  aoProgresso: function(d){ if(DC.varre === ctl && !d.fim) bgMsgHTML('dc_msg', dcLendoHTML(d), '') },
+  aoParcial: function(linhas){
+   if(DC.varre !== ctl) return;
+   dcAcrescentar(linhas); primeira();
+  },
+  aoFim: function(linhas, d){
+   if(DC.varre !== ctl) return;
+   DC.varre = null;
+   var r = d.extra || {};
+   dcAcrescentar(linhas);
+   var n = DC.series.length;
+   DC.imagens = r.imagens || [];
+   dcAcrescentar(DC.imagens);
+   BG.origem = r.origem || '';
+   if(!DC.series.length) dcPintarGrade();
+   bgPintarDestinos();
+   if(d.parado && !DC.series.length)
+    bgMsg('dc_msg', 'A busca foi interrompida: a lista tem só o que foi achado até ali.', 'erro');
+   else dcResumoDaCarga(n, r, d.parado);
+   primeira();
+  },
+  aoErro: function(m){
+   if(DC.varre !== ctl) return;
+   DC.varre = null;
+   DC.series = []; dcPintarGrade();
+   bgMsg('dc_msg', m, 'erro');
+  }});
+ DC.varre = ctl;
 }
 function dcProcurar(bt){
  if(!window.uiExplorador) return;
@@ -588,6 +646,8 @@ function dcZerar(){
 function dcLimparTudo(){
  bgEsquecerEnvio('dc_envio');
  dcCdEsquecer();
+ if(DC.varre && DC.varre.vivo()) DC.varre.parar(true);
+ DC.varre = null;
  var p = bgEl('dc_pasta'); if(p) p.value = '';
  DC.series = []; DC.imagens = []; DC.fonte = ''; BG.origem = '';
  dcZerar();
@@ -631,25 +691,53 @@ function dcPintarGrade(){
   bgTrad();
   return;
  }
- alvo.innerHTML = DC.series.map(function(s, i){
-  var fora = !dcMarcavel(s);
-  return '<div class="dc-cart' + (fora ? ' fora' : '') + '" id="dcs' + i + '" tabindex="0" role="button"'
-   + ' aria-pressed="false" aria-label="' + bgEsc(dcNome(s)) + '">'
-   + '<button type="button" class="dc-x" tabindex="-1" title="desmarcar"'
-   + ' aria-label="desmarcar">' + bgIco('desmarcar') + '</button>'
-   + '<div class="dc-mini" id="dcm' + i + '"><img id="dci' + i + '" alt="" draggable="false">'
-   + dcSelos(s) + '</div>'
-   + '<div class="tt">' + bgEsc(dcNome(s)) + '</div>'
-   + '<div class="mm" id="dcmm' + i + '">' + dcMeta(s) + '</div></div>';
- }).join('');
- DC.series.forEach(function(s, i){
-  var c = bgEl('dcs' + i);
-  if(c) dcLigarCartao(c, i);
-  if(s.bilhete && !s.sem_imagem) dcEnfileirarMini(i, s);
-  else dcSemPrevia(i, s.modalidade || '');
- });
+ alvo.innerHTML = DC.series.map(dcCartaoHtml).join('');
+ DC.series.forEach(dcPrepararCartao);
  dcPintarBarra();
  bgTrad();
+}
+function dcCartaoHtml(s, i){
+ var fora = !dcMarcavel(s);
+ return '<div class="dc-cart' + (fora ? ' fora' : '') + '" id="dcs' + i + '" tabindex="0" role="button"'
+  + ' aria-pressed="false" aria-label="' + bgEsc(dcNome(s)) + '">'
+  + '<button type="button" class="dc-x" tabindex="-1" title="desmarcar"'
+  + ' aria-label="desmarcar">' + bgIco('desmarcar') + '</button>'
+  + '<div class="dc-mini" id="dcm' + i + '"><img id="dci' + i + '" alt="" draggable="false">'
+  + dcSelos(s) + '</div>'
+  + '<div class="tt">' + bgEsc(dcNome(s)) + '</div>'
+  + '<div class="mm" id="dcmm' + i + '">' + dcMeta(s) + '</div></div>';
+}
+function dcPrepararCartao(s, i){
+ var c = bgEl('dcs' + i);
+ if(c) dcLigarCartao(c, i);
+ if(s.bilhete && !s.sem_imagem) dcEnfileirarMini(i, s);
+ else dcSemPrevia(i, s.modalidade || '');
+}
+// GUARDA: a série que chega entra no fim e nunca muda de índice; marcação, segmentação e visor guardam o índice.
+function dcAcrescentar(linhas){
+ var alvo = bgEl('dc_grade'); if(!alvo) return 0;
+ var pos = {}, novos = 0;
+ DC.series.forEach(function(s, i){ if(s.bilhete) pos[s.bilhete] = i });
+ (linhas || []).forEach(function(s){
+  var i = s.bilhete ? pos[s.bilhete] : null;
+  if(i != null){
+   var velho = DC.series[i];
+   if(velho.cortes !== s.cortes || velho.espessura_mm !== s.espessura_mm){
+    DC.series[i] = s;
+    var mm = bgEl('dcmm' + i); if(mm) mm.innerHTML = dcMeta(s);
+   }
+   return;
+  }
+  if(!DC.series.length) alvo.innerHTML = '';
+  i = DC.series.length;
+  DC.series.push(s);
+  if(s.bilhete) pos[s.bilhete] = i;
+  alvo.insertAdjacentHTML('beforeend', dcCartaoHtml(s, i));
+  dcPrepararCartao(s, i);
+  novos++;
+ });
+ if(novos){ dcPintarBarra(); bgTrad() }
+ return novos;
 }
 function dcLigarCartao(c, i){
  c.addEventListener('click', function(){
@@ -885,7 +973,7 @@ function dcPintarOutras(){
      if(d){
       var al = dcAlertas(d);
       corpo = falta + (al.length ? al.map(function(a){
-        return (a.impede ? '<b class="bg-nao">' + bgF('não converte') + '</b> ' : '') + bgEsc(a.titulo);
+        return (a.impede ? '<b class="bg-nao">' + bgF('não converte') + '</b> ' : '') + bgF(a.titulo);
        }).join(' &middot; ')
        : '<span class="ok">' + bgF('Nenhum alerta. A série está pronta para converter.') + '</span>');
      } else {
@@ -905,7 +993,7 @@ function dcPintarDiagLista(){
    + (DC.sel === i ? 'true' : 'false') + '" onclick="dcAbrir(' + i + ')">'
    + '<span class="mod">' + bgEsc(s.modalidade) + '</span><span class="nome">' + bgEsc(dcNome(s))
    + '</span><span class="al' + (n === 0 ? ' zero' : '') + '">'
-   + (n < 0 ? '…' : (n + ' ' + (n === 1 ? 'alerta' : 'alertas'))) + '</span></button>';
+   + (n < 0 ? '…' : (n + ' ' + bgF(n === 1 ? 'alerta' : 'alertas'))) + '</span></button>';
  }).join('');
  bgTrad();
 }
@@ -1595,10 +1683,12 @@ QUADRO_DO_CD = (u'<div class="dc-cd" id="dc_cd" hidden>'
 
 
 def carga(p, ao_carregar, ao_procurar, ao_limpar, rotulo):
+    import radai_image
     import radai_ui
     return (
         u'<section class="bg-carga" aria-label="carregar o estudo">'
-        + radai_ui.area_de_envio(p + u"_envio", extra=BOTAO_DO_CD)
+        + radai_ui.area_de_envio(p + u"_envio", extra=BOTAO_DO_CD,
+                                 imagens=u",".join(radai_image.EXTENSOES))
         + u'<div class="bg-carga-pasta">'
         u'<label class="bg-carga-rot" for="%(p)s_pasta" data-radai-frase>%(rot)s'
         u'</label>'
@@ -1755,6 +1845,22 @@ PAGINA = u"""<!doctype html><html><head><meta charset="utf-8">
 
 def _cab(t):
     return (t or u"").encode("ascii", "replace").decode("ascii")[:200]
+
+
+def linha_da_serie(s, bilhete):
+    import radai_thumbnail
+    return {"uid": s["uid"][-12:], "descricao": s["descricao"],
+            "modalidade": s["modalidade"],
+            "numero": s["numero"], "cortes": s["cortes"],
+            "espessura_mm": s.get("espessura_mm"),
+            "colorida": bool(s.get("colorida")),
+            "captura": bool(s.get("captura")),
+            "sem_imagem": (str(s.get("modalidade") or "").upper()
+                           in radai_thumbnail.SEM_IMAGEM),
+            "janela": radai_thumbnail.janela_do_visor(s["modalidade"]),
+            "central": radai_thumbnail.central(s["cortes"]),
+            "cranial": radai_thumbnail.sentido_cranial(s),
+            "bilhete": bilhete}
 
 
 TITULO_DO_TEXTO_DECLARADO = (u"O cabeçalho declara texto gravado na imagem "
@@ -1990,6 +2096,74 @@ def montar(app):
             return os.path.dirname(os.path.abspath(d))
         return d if os.path.isdir(E.no_disco(d)) else u""
 
+    def _varredura_iniciar(job):
+        import radai_dicom
+        digitada = job["pasta"]
+        try:
+            pasta = _pasta_real(digitada)
+        except Exception as e:
+            job["erro"] = u"não consegui abrir o .zip: %s" % str(e)[:160]
+            return
+        job["raiz"] = pasta
+        job["dados"] = {"juncao": radai_dicom.nova_juncao(), "ordem": [],
+                        "linhas": {}, "digitada": digitada,
+                        "carimbo": (radai_dicom.carimbo_da_arvore(pasta)
+                                    if os.path.isdir(pasta) else None)}
+
+    def _varredura_ler(job, pasta, nomes):
+        import radai_dicom
+        import radai_thumbnail
+        import radai_varrer
+        d = job["dados"]
+        r = radai_dicom.varrer_pasta(
+            pasta, parar=lambda: job["parado"],
+            ao_ler=lambda: radai_varrer.contar_arquivo(job), nomes=nomes)
+        radai_dicom.juntar_varredura(d["juncao"], r)
+        uids = [s["uid"] for s in r.get("series") or ()]
+        for uid in uids:
+            if uid not in d["linhas"]:
+                d["ordem"].append(uid)
+            uma = radai_dicom.varredura_da_juncao(
+                {"series": {uid: d["juncao"]["series"][uid]},
+                 "ignorados": []})["series"][0]
+            b = radai_thumbnail.registrar_series(job["raiz"], [uma]).get(uid)
+            d["linhas"][uid] = linha_da_serie(uma, b)
+        return bool(uids)
+
+    def _varredura_linhas(job):
+        d = job["dados"]
+        return [d["linhas"][u] for u in list(d.get("ordem") or ())]
+
+    def _varredura_fechar(job):
+        import radai_dicom
+        import radai_image
+        d = job["dados"]
+        raiz = job["raiz"]
+        r = radai_dicom.varredura_da_juncao(d["juncao"])
+        # GUARDA: busca cancelada ou cortada não vai ao cache; o diagnóstico leria uma série pela metade.
+        if not job["parado"] and not job["cortada"]:
+            radai_dicom.lembrar_varredura(raiz, d["carimbo"], r)
+        imagens = []
+        if not job["parado"]:
+            imagens, _n = radai_image_screen.series_da_arvore(raiz)
+        ignorados = [n for n, _m in r["ignorados"]
+                     if not str(n).lower().endswith(radai_image.EXTENSOES)]
+        return _varredura_linhas(job), {
+            "imagens": [radai_image_screen.para_a_grade(x) for x in imagens],
+            "ignorados": ignorados, "origem": _origem(d["digitada"])}
+
+    try:
+        import radai_dicom as _rd_pulada
+        import radai_varrer
+        radai_varrer.registrar("bridge", _varredura_ler, _varredura_linhas,
+                               fechar=_varredura_fechar,
+                               iniciar=_varredura_iniciar,
+                               pular=_rd_pulada.pasta_pulada, filtra=False)
+    except Exception as e:
+        import sys as _sys
+        _sys.stderr.write("[bridge] a varredura em segundo plano nao subiu: "
+                          "%s: %s\n" % (type(e).__name__, str(e)[:160]))
+
     @app.post("/api/bridge/varrer")
     async def _varrer(request: Request):
         try:
@@ -2013,19 +2187,7 @@ def montar(app):
                 radai_dicom.esquecer_varredura(pasta)
                 r = await radai_web.no_threadpool(radai_dicom.varrer, pasta)
             bilhetes = radai_thumbnail.registrar_series(pasta, r["series"])
-            series = [{"uid": s["uid"][-12:], "descricao": s["descricao"],
-                       "modalidade": s["modalidade"],
-                       "numero": s["numero"], "cortes": s["cortes"],
-                       "espessura_mm": s.get("espessura_mm"),
-                       "colorida": bool(s.get("colorida")),
-                       "captura": bool(s.get("captura")),
-                       "sem_imagem": (str(s.get("modalidade") or "").upper()
-                                      in radai_thumbnail.SEM_IMAGEM),
-                       "janela": radai_thumbnail.janela_do_visor(
-                           s["modalidade"]),
-                       "central": radai_thumbnail.central(s["cortes"]),
-                       "cranial": radai_thumbnail.sentido_cranial(s),
-                       "bilhete": bilhetes.get(s["uid"])}
+            series = [linha_da_serie(s, bilhetes.get(s["uid"]))
                       for s in r["series"]]
             imagens, _n = await radai_web.no_threadpool(
                 radai_image_screen.series_da_arvore, pasta)
